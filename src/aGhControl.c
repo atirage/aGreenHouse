@@ -33,7 +33,7 @@ typedef enum {
     _1W_TEMP = 0,
     PWM_FLOW,
     DHT_HMD_TEMP,
-    DIG_SWITCH,
+    RF_SWITCH,
     SENS_UNKNOWN,
     NR_SENS_TYPE
 }t_e_sensor_type;
@@ -121,11 +121,12 @@ static int updateActuatorCtrlFnc_CB(void *actPtr, int nCol, char **valCol, char 
 static int getAlert_CB(void *Value, int nCol, char **valCol, char **nameCol);
 
 /* threads */
-void * read1wTempSensor(void *self);
-void * readDhtSensor(void *self);
+void *read1wTempSensor(void *self);
+void *readDhtSensor(void *self);
 void *readPwmFlowSensor(void *self);
 void *controlTimeRelay(void * self);
 void *controlHysteresis(void * self);
+void *readRfSwitch(void *self);
 void *dummyThread(void *self);
 
 /* misc */
@@ -142,7 +143,7 @@ const t_s_thread_func SensThreadCfg[NR_SENS_TYPE] = {
         read1wTempSensor,   //_1W_TEMP
         readPwmFlowSensor, //PWM_FLOW
         readDhtSensor,          //DHT_HMD_TEMP
-        dummyThread,           //DIG_SWITCH
+		readRfSwitch,           //RF_SWITCH
         NULL                         //SENS_UNKNOWN
 };
 /* map actuator type to thread function */
@@ -933,6 +934,45 @@ void *read1wTempSensor(void *self)
             }
             /* check alert */
             checkAlert(SensPtr->DbId, (float)tempVal/1000.0, U_C);
+            /* go to sleep */
+            sleep(SensPtr->SampleTime);
+        }
+    }
+    return NULL;
+}
+
+void *readRfSwitch(void *self)
+{
+    const t_s_sensor *SensPtr = (const t_s_sensor *) self;
+    char devPath[46];
+    int tempVal = 0;
+    //float params[NR_UNITS] = {0};
+
+    /* get device path from Db */
+    strcpy(devPath, "/sys/bus/w1/devices/28-XXXXXXXXXXXX/w1_slave");
+    strncpy(devPath + 23, SensPtr->AccessedBy, ACCESSED_BY_SIZE - 1);
+    while(1)
+    {
+        if(1/*get_(devPath, &tempVal) != OK*/)
+        {/* unsuccesful, try again later */
+            syslog(LOG_ERR, "Error reading sensor: %d!\n", SensPtr->DbId);
+            sleep(10);
+        }
+        else
+        {
+            /* insert into DB */
+            if(insertSensorValue(SensPtr, tempVal, U_NONE, (unsigned)time(NULL)) != SQLITE_OK)
+            {
+                syslog(LOG_ERR, "SQL error when inserting values for sensor: %d !\n", SensPtr->DbId);
+            }
+            /* issue cmd to actuators if configured */
+            if(SensPtr->headAct)
+            {
+                //params[U_C] = (float)tempVal/1000.0;
+                issueActCmd(SensPtr->headAct, params);
+            }
+            /* check alert */
+            //checkAlert(SensPtr->DbId, (float)tempVal/1000.0, U_C);
             /* go to sleep */
             sleep(SensPtr->SampleTime);
         }
