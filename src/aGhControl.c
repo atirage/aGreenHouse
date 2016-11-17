@@ -149,9 +149,9 @@ const t_s_thread_func SensThreadCfg[NR_SENS_TYPE] = {
 /* map actuator type to thread function */
 const t_s_thread_func ActThreadCfg[NR_ACT_TYPE] = {
         controlTimeRelay,    //ON_OFF_TIME
-        controlHysteresis,    //ON_OFF_FDB_T
-        controlHysteresis,    //ON_OFF_FDB_H
-        NULL                //ACT_UNKNOWN
+        controlHysteresis,   //ON_OFF_FDB_T
+        controlHysteresis,   //ON_OFF_FDB_H
+        NULL                 //ACT_UNKNOWN
 };
 
 /* ------------------function implementations----------------------------- */
@@ -944,37 +944,76 @@ void *read1wTempSensor(void *self)
 void *readRfSwitch(void *self)
 {
     const t_s_sensor *SensPtr = (const t_s_sensor *) self;
-    char devPath[46];
-    int tempVal = 0;
-    //float params[NR_UNITS] = {0};
+    static unsigned char SwitchState = 0;
+    char devPath[46], tempVal = 0;
+    int devFd;
+    struct termios cf;
+    float params[NR_UNITS] = {0};
 
     /* get device path from Db */
-    strcpy(devPath, "/sys/bus/w1/devices/28-XXXXXXXXXXXX/w1_slave");
-    strncpy(devPath + 23, SensPtr->AccessedBy, ACCESSED_BY_SIZE - 1);
+    strcpy(devPath, "/dev/XXXXXXX");  //ex. ttyACM0
+    strncpy(devPath + 5, SensPtr->AccessedBy, ACCESSED_BY_SIZE - 1);
+    /* open, set and connect */
+    devFd = open(devPath, O_RDWR);
+    if(devFd < 0)
+    {
+    	syslog(LOG_ERR, "Unable to open '%s'\n", devPath);
+    	return NULL;
+    }
+    if(tcgetattr(devFd, &cf) < 0)
+    {
+    	syslog(LOG_ERR, "Unable to get termios details\n");
+    	return NULL;
+    }
+    if(cfsetispeed(&cf, B115200) < 0 || cfsetospeed(&cf, B115200) < 0)
+    {
+    	syslog(LOG_ERR, "Unable to set speed\n");
+    	return NULL;
+    }
+
+    /* Make it a raw stream and turn off software flow control */
+    cfmakeraw(&cf);
+    cf.c_iflag &= ~(IXON | IXOFF | IXANY);
+    if(tcsetattr(devFd, TCSANOW, &cf) < 0)
+    {
+    	syslog(LOG_ERR, "Unable to set termios details\n");
+    	return NULL;
+    }
+
+    if(makeRfLink(devFd) != OK)
+    {
+    	syslog(LOG_ERR, "Unable to set up RF LINK\n");
+    	return NULL;
+    }
+
+    /* wait for presses */
     while(1)
     {
-        if(1/*get_(devPath, &tempVal) != OK*/)
-        {/* unsuccesful, try again later */
+        if(getRfSwitch(devFd, &tempVal) != OK)
+        {/* unsuccessful, try again later */
             syslog(LOG_ERR, "Error reading sensor: %d!\n", SensPtr->DbId);
             sleep(10);
         }
         else
         {
-            /* insert into DB */
-            if(insertSensorValue(SensPtr, tempVal, U_NONE, (unsigned)time(NULL)) != SQLITE_OK)
-            {
-                syslog(LOG_ERR, "SQL error when inserting values for sensor: %d !\n", SensPtr->DbId);
+            if (tempVal != 0)
+            {/* right button pressed, flip switch state */
+            	SwitchState = (~SwitchState) & 0x01u;
+            	/* insert into DB */
+            	if(insertSensorValue(SensPtr, SwitchState, U_NONE, (unsigned)time(NULL)) != SQLITE_OK)
+            	{
+            		syslog(LOG_ERR, "SQL error when inserting values for sensor: %d !\n", SensPtr->DbId);
+            	}
+            	/* issue cmd to actuators if configured */
+            	if(SensPtr->headAct)
+            	{
+            		params[U_NONE] = (float)SwitchState;
+            		issueActCmd(SensPtr->headAct, params);
+            	}
+            	/* check alert */
+            	//checkAlert(SensPtr->DbId, (float)tempVal/1000.0, U_C);
+            	/* go back to sleep, blocking read */
             }
-            /* issue cmd to actuators if configured */
-            if(SensPtr->headAct)
-            {
-                //params[U_C] = (float)tempVal/1000.0;
-                issueActCmd(SensPtr->headAct, params);
-            }
-            /* check alert */
-            //checkAlert(SensPtr->DbId, (float)tempVal/1000.0, U_C);
-            /* go to sleep */
-            sleep(SensPtr->SampleTime);
         }
     }
     return NULL;

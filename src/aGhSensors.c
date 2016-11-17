@@ -147,3 +147,58 @@ unsigned int getPwmFlow(unsigned char pin, float *flowRate)
     close(sysFd);
     return OK;
 }
+
+unsigned int makeRfLink(int devFd)
+{
+	/* See if you can get a response to a hello */
+	unsigned char dont_give_up = 5;
+	static unsigned char hello_str[3] = {0xFF, 0x07, 0x03};
+
+	while(dont_give_up)
+	{
+		unsigned char hello_response[3];
+		int i;
+
+		usleep(250000);
+
+		if(write(devFd, hello_str, sizeof(hello_str)) != sizeof(hello_str))
+		{
+			return NOK;
+		}
+
+		i = read(devFd, hello_response, sizeof(hello_response));
+		if(i < 0)
+		{
+			return NOK;
+		}
+
+		if(i != sizeof(hello_response))
+		{
+			dont_give_up--;
+		}
+		else if(hello_response[0] == 0xFF && hello_response[1] == 0x6 && hello_response[2] == 0x3)
+		{
+			break;
+		}
+		else
+		{
+			dont_give_up--;
+		}
+	}
+
+	if(dont_give_up)
+	{
+		return OK;
+	}
+	else
+	{
+		return NOK;
+	}
+}
+
+unsigned int getRfSwitch(int devFd, unsigned char pressed)
+{
+    (void)read(devFd, &pressed, 1);
+    return OK;
+}
+
