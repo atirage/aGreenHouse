@@ -2,8 +2,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <fcntl.h>
-#include<sched.h>
+#include <sched.h>
 #include <poll.h>
+#include <unistd.h>
 
 #include "aGhSensors.h"
 
@@ -196,7 +197,7 @@ unsigned int makeRfLink(int devFd)
 	}
 }
 
-unsigned int getRfSwitch(int devFd, unsigned char pressed)
+unsigned int getRfSwitch(int devFd, unsigned char * pressed)
 {
     (void)read(devFd, &pressed, 1);
     return OK;

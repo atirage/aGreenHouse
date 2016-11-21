@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include "aGhActuators.h"
 
 static void addTimeStamp(unsigned char pin, unsigned short int supervisionCycle);

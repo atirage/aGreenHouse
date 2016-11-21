@@ -10,15 +10,13 @@
 #include <fcntl.h>
 #include <syslog.h>
 #include <unistd.h>
+#include <termios.h>
 
 /* user includes */
 #include "aGhSensors.h"
 #include "aGhActuators.h"
 
 #define DEBUG
-
-#define TRUE 1
-#define FALSE 0
 
 /* Application error codes */
 #define ERR_APP_SQL     1
@@ -41,7 +39,6 @@ typedef enum {
 typedef enum {
     ON_OFF_TIME = 0,
     ON_OFF_FDB,
-	ON_OFF_EXT,
     ACT_UNKNOWN,
     NR_ACT_TYPE
 }t_e_actuator_type;
@@ -70,7 +67,7 @@ typedef struct {
     char Location[LOCATION_SIZE];                  /* physical location of sensor */
     char AccessedBy[ACCESSED_BY_SIZE];             /* connection to the raspberry, for ex. file, gpio, etc */
     t_e_actuator_type Type;                        /* type of sensor, defines how the actuator will be handled */
-    t_e_unit FdbUnit;							   /* unit of feedback, if any
+    t_e_unit FdbUnit;							   /* unit of feedback, if any */
     void *ctrlFnc;                                 /* assigned control func */
     t_e_ext_cmd extCmd;                            /* external cmd */
     float paramCmd;                                /* command parameter */
@@ -127,7 +124,6 @@ void *readDhtSensor(void *self);
 void *readPwmFlowSensor(void *self);
 void *controlTimeRelay(void * self);
 void *controlHysteresis(void * self);
-void *controlSlaveRelay(void * self);
 void *readRfSwitch(void *self);
 void *dummyThread(void *self);
 
@@ -152,7 +148,6 @@ const t_s_thread_func SensThreadCfg[NR_SENS_TYPE] = {
 const t_s_thread_func ActThreadCfg[NR_ACT_TYPE] = {
         controlTimeRelay,    //ON_OFF_TIME
         controlHysteresis,   //ON_OFF_FDB
-        controlSlaveRelay,   //ON_OFF_EXT
         NULL                 //ACT_UNKNOWN
 };
 
@@ -162,7 +157,7 @@ static void cleanup(void)
 {
     unsigned int i;
     sqlite3_close(db);
-    if(actuators)
+    if(actuators != NULL)
     {
         for(i=0; i < nrAct; i++)
         {
@@ -170,7 +165,7 @@ static void cleanup(void)
         }
         free(actuators);
     }
-    if(sensors)
+    if(sensors != NULL)
     {
         for(i=0; i < nrSens; i++)
         {
@@ -305,11 +300,13 @@ static void issueActCmd(t_s_act_list *actList, float *paramList)
         	case U_PERCENT:
         		actList->ptrAct->paramCmd = paramList[U_PERCENT];
         		break;
+        	case U_NONE:
+        		actList->ptrAct->paramCmd = paramList[U_NONE];
+        		break;
+        	default:
+        		actList->ptrAct->paramCmd = 0;
+        		break;
         	}
-            break;
-        case ON_OFF_EXT:
-            actList->ptrAct->extCmd = CMD_ACTIVATE;//todo: correct values
-            actList->ptrAct->paramCmd = paramList[U_NONE];
             break;
         default:
         	actList->ptrAct->extCmd = CMD_RELEASE;
@@ -528,9 +525,9 @@ static int getAllActuators_CB(void *countRow, int nCol, char **valCol, char **na
         actuators[i].Type = ON_OFF_FDB;
         actuators[i].FdbUnit = U_PERCENT;
     }
-    else if(strcmp(valCol[3], "ON_OFF_EXT") == 0)
+    else if(strcmp(valCol[3], "ON_OFF_FDB_DIG") == 0)
     {
-        actuators[i].Type = ON_OFF_EXT;
+        actuators[i].Type = ON_OFF_FDB;
         actuators[i].FdbUnit = U_NONE;
     }
     else
@@ -1334,94 +1331,3 @@ void *controlHysteresis(void * self)
     }
     return NULL;
 }
-
-void *controlSlaveRelay(void * self)
-{
-    t_s_actuator *ActPtr = (t_s_actuator *) self;
-    t_s_temp_hyst_fct *ptrFct = NULL;
-    unsigned char Pin, Cmd, Ovride = FALSE;
-    float Param;
-    char queryString[50];
-    int rc;
-
-    ptrFct = (t_s_temp_hyst_fct *)ActPtr->ctrlFnc;
-    if(getWPiPin(ActPtr->AccessedBy, &Pin) < 0)
-    {
-        syslog(LOG_ERR, "Invalid Pin for ActuatorInd: %d \n", ActPtr->DbId);
-        return NULL;
-    }
-     /* command handling */
-    while(1)
-    {
-     /* wait for cmd */
-        pthread_mutex_lock(&(ActPtr->cmd_mutex));
-        pthread_cond_wait(&(ActPtr->cmd_cv), &(ActPtr->cmd_mutex));
-        Cmd = ActPtr->extCmd;
-        Param = ActPtr->paramCmd;
-        pthread_mutex_unlock(&(ActPtr->cmd_mutex));
-
-        syslog(LOG_INFO, "Command received for %d with param %f \n", ActPtr->DbId, Param);
-        switch(Cmd)
-        {
-        case CMD_ACTIVATE:
-            /* activate and insert into activation history */
-            Ovride = TRUE;
-            setRelay(Pin, LOW, ActPtr->supervisionCycle);
-            if((insertActuatorState(ActPtr, 1, U_NONE)) != SQLITE_OK)
-            {
-                syslog(LOG_ERR, "SQL error when inserting state for actuator: %d !\n", ActPtr->DbId);
-            }
-            break;
-        case CMD_DEACTIVATE:
-            /* deactivate and insert into activation history */
-            Ovride = TRUE;
-            setRelay(Pin, HIGH, ActPtr->supervisionCycle);
-            if((insertActuatorState(ActPtr, 0, U_NONE)) != SQLITE_OK)
-            {
-                syslog(LOG_ERR, "SQL error when inserting state for actuator: %d !\n", ActPtr->DbId);
-            }
-            break;
-        case CMD_CALCULATE:
-            if(FALSE == Ovride)
-            {
-                if(Param < ptrFct->threshold - ptrFct->hysteresis)
-                {
-                    /* activate and insert into activation history */
-                    setRelay(Pin, LOW, ActPtr->supervisionCycle);
-                    if((insertActuatorState(ActPtr, 1, U_NONE)) != SQLITE_OK)
-                    {
-                        syslog(LOG_ERR, "SQL error when inserting state for actuator: %d !\n", ActPtr->DbId);
-                    }
-                }
-                else if(Param > ptrFct->threshold + ptrFct->hysteresis)
-                {
-                	/* deactivate and insert into activation history */
-                    setRelay(Pin, HIGH, ActPtr->supervisionCycle);
-                    if((insertActuatorState(ActPtr, 0, U_NONE)) != SQLITE_OK)
-                    {
-                        syslog(LOG_ERR, "SQL error when inserting state for actuator: %d !\n", ActPtr->DbId);
-                    }
-                }
-                else
-                {/* no change */
-                }
-            }
-            break;
-        case CMD_UPDATE_FNC:
-            snprintf(queryString, 45, "select CtrlFnc from Actuators where Ind = %d;", ActPtr->DbId);
-            rc = sqlite3_exec(db, queryString, updateActuatorCtrlFnc_CB, ActPtr, NULL);
-            if( rc != SQLITE_OK )
-            {
-                syslog(LOG_ERR, "SQL error when querying for actuator %d\n", ActPtr->DbId);
-                //send back NOK
-            }
-            break;
-        case CMD_RELEASE:
-        default:
-            Ovride = FALSE;
-            break;
-        }
-    }
-    return NULL;
-}
-

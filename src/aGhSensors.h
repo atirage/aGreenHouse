@@ -15,7 +15,7 @@ typedef struct _tag_dht_values{
 extern unsigned int get1wTemperature(char *devicePath, int *tempRawVal);
 extern unsigned int getDht22Values(unsigned char pin, t_s_dht_values *dhtValues);
 extern unsigned int getPwmFlow(unsigned char pin, float *flowRate);
-extern unsigned int getRfSwitch(int devFd, unsigned char pressed);
+extern unsigned int getRfSwitch(int devFd, unsigned char *pressed);
 extern unsigned int makeRfLink(int devFd);
 
 #endif
