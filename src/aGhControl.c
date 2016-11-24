@@ -968,7 +968,7 @@ void *readRfSwitch(void *self)
 {
     const t_s_sensor *SensPtr = (const t_s_sensor *) self;
     static unsigned char SwitchState = 0;
-    char devPath[46], tempVal = 0;
+    char devPath[46], tempBuff[7] = 0;
     int devFd;
     struct termios cf;
     float params[NR_UNITS] = {0};
@@ -1010,16 +1010,24 @@ void *readRfSwitch(void *self)
     }
 
     /* wait for presses */
+#ifdef DEBUG
+    syslog(LOG_INFO, "Waiting for button presses... \n");
+#endif
     while(1)
     {
-        if(getRfSwitch(devFd, &tempVal) != OK)
+        char bytesRcvd;
+    	if(getRfSwitch(devFd, tempBuff, &bytesRcvd) != OK)
         {/* unsuccessful, try again later */
             syslog(LOG_ERR, "Error reading sensor: %d!\n", SensPtr->DbId);
             sleep(10);
         }
         else
         {
-            if (tempVal != 0)
+        	char tempVal = tempBuff[0];
+#ifdef DEBUG
+        	syslog(LOG_INFO, "First %d bytes valid from: %d %d %d %d %d %d %d\n", bytesRcvd, tempBuff[0], tempBuff[1], tempBuff[2], tempBuff[3], tempBuff[4], tempBuff[5], tempBuff[7]);
+#endif
+        	if (tempVal != 0)
             {/* right button pressed, flip switch state */
             	SwitchState = (~SwitchState) & 0x01u;
             	/* insert into DB */

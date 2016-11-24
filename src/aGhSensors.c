@@ -197,9 +197,13 @@ unsigned int makeRfLink(int devFd)
 	}
 }
 
-unsigned int getRfSwitch(int devFd, unsigned char * pressed)
+unsigned int getRfSwitch(int devFd, char *buffer, char *bytesRcvd)
 {
-    (void)read(devFd, &pressed, 1);
+	*bytesRcvd = read(devFd, buffer, 7);
+	if(bytesRcvd < 0)
+	{
+		return NOK;
+	}
     return OK;
 }
 
