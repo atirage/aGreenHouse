@@ -19,9 +19,13 @@ static void addTimeStamp(unsigned char pin, unsigned short int supervisionCycle)
     FILE *fp = NULL;
     char fn[30] = {0}, stamp[18] = {0};
 
-    snprintf(fn, 30, "/var/lib/aGreenhouse/out_%d", pin);
+    snprintf(fn, 30, "/var/lib/aGreenHouse/out_%d", pin);
     snprintf(stamp, 18, "%d@%d", supervisionCycle, (unsigned)time(NULL));
     fp = fopen(fn, "w");
+    if(fp < 0)
+    {
+    	return;
+    }
     fwrite(stamp, 1, strlen(stamp), fp);
     fclose(fp);
 }

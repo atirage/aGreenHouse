@@ -140,7 +140,7 @@ static void checkAlert(unsigned short int dbSensId, float value, t_e_unit unit);
 const t_s_thread_func SensThreadCfg[NR_SENS_TYPE] = {
         read1wTempSensor,   //_1W_TEMP
         readPwmFlowSensor,  //PWM_FLOW
-        readDhtSensor,      //DHT_HMD_TEMP
+		dummyThread,//readDhtSensor,      //DHT_HMD_TEMP
 		readRfSwitch,       //RF_SWITCH
         NULL                //SENS_UNKNOWN
 };
@@ -722,6 +722,7 @@ int main(void)
     unsigned short int cmd, actInd, phase = 0, i = 0, count;
     unsigned int row;
     float param = 0;
+    struct stat st = {0};
     
     openlog("root", LOG_ODELAY, LOG_USER);
     
@@ -736,6 +737,11 @@ int main(void)
         syslog(LOG_ERR, "Can't open database: %s\n", sqlite3_errmsg(db));
         sqlite3_close(db);
         return ERR_APP_SQL;
+    }
+
+    if (stat("/var/lib/aGreenHouse", &st) == -1)
+    {
+        mkdir("/var/lib/aGreenHouse", 0700);
     }
 
     /* ------------ prepare sensor acquisition and actuator control ------------- */
@@ -841,10 +847,10 @@ int main(void)
     syslog(LOG_INFO, "Measuring and waiting for commands... \n");
     /* wait for commands from fifo */
     umask(0);
-    mknod("/var/lib/aGreenhouse/cmdFIFO", S_IFIFO|0666, 0);//EEXIST
-    mknod("/var/lib/aGreenhouse/respFIFO", S_IFIFO|0666, 0);//EEXIST
-    cmd_fd = open("/var/lib/aGreenhouse/cmdFIFO", O_RDONLY);//check for error
-    resp_fd = open("/var/lib/aGreenhouse/respFIFO", O_WRONLY);//check for error
+    mknod("/var/lib/aGreenHouse/cmdFIFO", S_IFIFO|0666, 0);//EEXIST
+    mknod("/var/lib/aGreenHouse/respFIFO", S_IFIFO|0666, 0);//EEXIST
+    cmd_fd = open("/var/lib/aGreenHouse/cmdFIFO", O_RDONLY);//check for error
+    resp_fd = open("/var/lib/aGreenHouse/respFIFO", O_WRONLY);//check for error
     i = 0;
     while(1)
     {
@@ -968,14 +974,17 @@ void *readRfSwitch(void *self)
 {
     const t_s_sensor *SensPtr = (const t_s_sensor *) self;
     static unsigned char SwitchState = 0;
-    char devPath[46], tempBuff[7] = 0;
+    char devPath[46], tempBuff[7] = {0};
     int devFd;
     struct termios cf;
     float params[NR_UNITS] = {0};
 
     /* get device path from Db */
     strcpy(devPath, "/dev/XXXXXXX");  //ex. ttyACM0
-    strncpy(devPath + 5, SensPtr->AccessedBy, ACCESSED_BY_SIZE - 1);
+    strncpy(devPath + 5, SensPtr->AccessedBy, 8);
+#ifdef DEBUG
+    syslog(LOG_INFO, "Opening %s\n", devPath);
+#endif
     /* open, set and connect */
     devFd = open(devPath, O_RDWR);
     if(devFd < 0)
@@ -1031,19 +1040,20 @@ void *readRfSwitch(void *self)
             {/* right button pressed, flip switch state */
             	SwitchState = (~SwitchState) & 0x01u;
             	/* insert into DB */
-            	if(insertSensorValue(SensPtr, SwitchState, U_NONE, (unsigned)time(NULL)) != SQLITE_OK)
-            	{
-            		syslog(LOG_ERR, "SQL error when inserting values for sensor: %d !\n", SensPtr->DbId);
-            	}
+            	//if(insertSensorValue(SensPtr, SwitchState, U_NONE, (unsigned)time(NULL)) != SQLITE_OK)
+            	//{
+            	//	syslog(LOG_ERR, "SQL error when inserting values for sensor: %d !\n", SensPtr->DbId);
+            	//}
             	/* issue cmd to actuators if configured */
-            	if(SensPtr->headAct)
-            	{
-            		params[U_NONE] = (float)SwitchState;
-            		issueActCmd(SensPtr->headAct, params);
-            	}
+            	//if(SensPtr->headAct)
+            	//{
+            	//	params[U_NONE] = (float)SwitchState;
+            	//	issueActCmd(SensPtr->headAct, params);
+            	//}
             	/* check alert */
             	//checkAlert(SensPtr->DbId, (float)tempVal/1000.0, U_C);
             	/* go back to sleep, blocking read */
+            	sleep(1);
             }
         }
     }
@@ -1178,7 +1188,7 @@ void *controlTimeRelay(void * self)
          {/* activate according to control func and insert into activation history*/
              currTime = time(NULL);
              localTime = localtime(&currTime);
-             syslog(LOG_INFO, "%d %d %d\n", localTime->tm_hour, localTime->tm_min, localTime->tm_sec);
+             syslog(LOG_INFO, "Last activation: %d %d %d\n", localTime->tm_hour, localTime->tm_min, localTime->tm_sec);
              index = (localTime->tm_hour * 3600 + localTime->tm_min * 60 + localTime->tm_sec);
              toWait = ptrFct->resolution - (index % ptrFct->resolution);
              index /= ptrFct->resolution;

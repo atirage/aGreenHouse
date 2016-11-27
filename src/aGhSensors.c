@@ -199,6 +199,12 @@ unsigned int makeRfLink(int devFd)
 
 unsigned int getRfSwitch(int devFd, char *buffer, char *bytesRcvd)
 {
+	static unsigned char data_req[7] = {0xFF, 0x08, 0x07, 0x00, 0x00, 0x00, 0x00};
+	if(write(devFd, data_req, sizeof(data_req)) != sizeof(data_req))
+	{
+		return NOK;
+	}
+
 	*bytesRcvd = read(devFd, buffer, 7);
 	if(bytesRcvd < 0)
 	{
