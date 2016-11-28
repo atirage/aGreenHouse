@@ -974,7 +974,8 @@ void *readRfSwitch(void *self)
 {
     const t_s_sensor *SensPtr = (const t_s_sensor *) self;
     static unsigned char SwitchState = 0;
-    char devPath[46], tempBuff[7] = {0};
+    char devPath[46];
+    unsigned char Switches;
     int devFd;
     struct termios cf;
     float params[NR_UNITS] = {0};
@@ -1025,35 +1026,32 @@ void *readRfSwitch(void *self)
     while(1)
     {
         char bytesRcvd;
-    	if(getRfSwitch(devFd, tempBuff, &bytesRcvd) != OK)
+    	if(getRfSwitch(devFd, &Switches) != OK)
         {/* unsuccessful, try again later */
             syslog(LOG_ERR, "Error reading sensor: %d!\n", SensPtr->DbId);
             sleep(10);
         }
         else
         {
-        	char tempVal = tempBuff[0];
 #ifdef DEBUG
-        	syslog(LOG_INFO, "First %d bytes valid from: %d %d %d %d %d %d %d\n", bytesRcvd, tempBuff[0], tempBuff[1], tempBuff[2], tempBuff[3], tempBuff[4], tempBuff[5], tempBuff[7]);
+        	syslog(LOG_INFO, "Read switches: %d\n", bytesRcvd, Switches);
 #endif
-        	if (tempVal != 0)
-            {/* right button pressed, flip switch state */
+        	if ((Switches & RF_SWITCH_BOTTOM_LEFT_MASK) != 0)
+            {/* bottom right button pressed, flip switch state */
             	SwitchState = (~SwitchState) & 0x01u;
             	/* insert into DB */
-            	//if(insertSensorValue(SensPtr, SwitchState, U_NONE, (unsigned)time(NULL)) != SQLITE_OK)
-            	//{
-            	//	syslog(LOG_ERR, "SQL error when inserting values for sensor: %d !\n", SensPtr->DbId);
-            	//}
+            	if(insertSensorValue(SensPtr, SwitchState, U_NONE, (unsigned)time(NULL)) != SQLITE_OK)
+            	{
+            		syslog(LOG_ERR, "SQL error when inserting values for sensor: %d !\n", SensPtr->DbId);
+            	}
             	/* issue cmd to actuators if configured */
-            	//if(SensPtr->headAct)
-            	//{
-            	//	params[U_NONE] = (float)SwitchState;
-            	//	issueActCmd(SensPtr->headAct, params);
-            	//}
-            	/* check alert */
-            	//checkAlert(SensPtr->DbId, (float)tempVal/1000.0, U_C);
-            	/* go back to sleep, blocking read */
-            	sleep(1);
+            	if(SensPtr->headAct)
+            	{
+            		params[U_NONE] = (float)SwitchState;
+            		issueActCmd(SensPtr->headAct, params);
+            	}
+            	/* go back to sleep */
+            	usleep(SensPtr->SampleTime * 1000u);
             }
         }
     }

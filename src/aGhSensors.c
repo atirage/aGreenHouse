@@ -8,6 +8,8 @@
 
 #include "aGhSensors.h"
 
+#include RF_FRAME_SIZE (7u)
+
 static unsigned dtAbs(unsigned t1, unsigned t2);
 
 /* ------------------function implementations----------------------------- */
@@ -197,18 +199,41 @@ unsigned int makeRfLink(int devFd)
 	}
 }
 
-unsigned int getRfSwitch(int devFd, char *buffer, char *bytesRcvd)
+unsigned int getRfSwitch(int devFd, unsigned char *switches)
 {
-	static unsigned char data_req[7] = {0xFF, 0x08, 0x07, 0x00, 0x00, 0x00, 0x00};
+	static const unsigned char data_req[RF_FRAME_SIZE] = {0xFF, 0x08, 0x07, 0x00, 0x00, 0x00, 0x00};
+	unsigned char buffer[RF_FRAME_SIZE];
+
 	if(write(devFd, data_req, sizeof(data_req)) != sizeof(data_req))
 	{
 		return NOK;
 	}
 
-	*bytesRcvd = read(devFd, buffer, 7);
-	if(bytesRcvd < 0)
+	*bytesRcvd = read(devFd, buffer, RF_FRAME_SIZE);
+	if( (bytesRcvd != RF_FRAME_SIZE) ||
+	    (buffer[0] != 0xFF || buffer[1] != 0x6 || buffer[2] != 0x7) )
 	{
 		return NOK;
+	}
+
+	/* valid response */
+	*switches = 0x00u;
+	switch(buffer[3])
+	{
+	case 0x12:
+		*switches |= RF_SWITCH_TOP_LEFT_MASK;
+		break;
+	case 0x22:
+		*switches |= RF_SWITCH_BOTTOM_LEFT_MASK;
+		break;
+	case 0x32:
+		*switches |= RF_SWITCH_TOP_RIGHT_MASK;
+		break;
+	case 0xFF:
+		break;
+	default:
+		return NOK;
+		break;
 	}
     return OK;
 }
