@@ -1034,7 +1034,10 @@ void *readRfSwitch(void *self)
         else
         {
 #ifdef DEBUG
-        	syslog(LOG_INFO, "Read switches: %d\n", bytesRcvd, Switches);
+        	if(Switches)
+        	{
+        		syslog(LOG_INFO, "Read switch: %d", Switches);
+        	}
 #endif
         	if ((Switches & RF_SWITCH_BOTTOM_LEFT_MASK) != 0)
             {/* bottom right button pressed, flip switch state */
@@ -1050,9 +1053,9 @@ void *readRfSwitch(void *self)
             		params[U_NONE] = (float)SwitchState;
             		issueActCmd(SensPtr->headAct, params);
             	}
-            	/* go back to sleep */
-            	usleep(SensPtr->SampleTime * 1000u);
             }
+        	/* go back to sleep */
+        	usleep(SensPtr->SampleTime * 1000u);
         }
     }
     return NULL;

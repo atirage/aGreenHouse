@@ -8,7 +8,7 @@
 
 #include "aGhSensors.h"
 
-#include RF_FRAME_SIZE (7u)
+#define RF_FRAME_SIZE (7u)
 
 static unsigned dtAbs(unsigned t1, unsigned t2);
 
@@ -199,18 +199,19 @@ unsigned int makeRfLink(int devFd)
 	}
 }
 
+/* function needs to be called cyclically, for one button press the RF watch generates more frames, this needs to be filtered out */
 unsigned int getRfSwitch(int devFd, unsigned char *switches)
 {
 	static const unsigned char data_req[RF_FRAME_SIZE] = {0xFF, 0x08, 0x07, 0x00, 0x00, 0x00, 0x00};
 	unsigned char buffer[RF_FRAME_SIZE];
+	static unsigned char inhibitBtnPress[3] = {0};
 
 	if(write(devFd, data_req, sizeof(data_req)) != sizeof(data_req))
 	{
 		return NOK;
 	}
 
-	*bytesRcvd = read(devFd, buffer, RF_FRAME_SIZE);
-	if( (bytesRcvd != RF_FRAME_SIZE) ||
+	if( (read(devFd, buffer, RF_FRAME_SIZE) != RF_FRAME_SIZE) ||
 	    (buffer[0] != 0xFF || buffer[1] != 0x6 || buffer[2] != 0x7) )
 	{
 		return NOK;
@@ -221,15 +222,39 @@ unsigned int getRfSwitch(int devFd, unsigned char *switches)
 	switch(buffer[3])
 	{
 	case 0x12:
-		*switches |= RF_SWITCH_TOP_LEFT_MASK;
+		if(inhibitBtnPress[0] == 0)
+		{
+			*switches |= RF_SWITCH_TOP_LEFT_MASK;
+			inhibitBtnPress[0] = 1;
+		}
 		break;
 	case 0x22:
-		*switches |= RF_SWITCH_BOTTOM_LEFT_MASK;
+		if(inhibitBtnPress[1] == 0)
+		{
+			*switches |= RF_SWITCH_BOTTOM_LEFT_MASK;
+			inhibitBtnPress[1] = 1;
+		}
 		break;
 	case 0x32:
-		*switches |= RF_SWITCH_TOP_RIGHT_MASK;
+		if(inhibitBtnPress[2] == 0)
+		{
+			*switches |= RF_SWITCH_TOP_RIGHT_MASK;
+			inhibitBtnPress[2] = 5;
+		}
 		break;
 	case 0xFF:
+		if(inhibitBtnPress[0])
+		{
+			inhibitBtnPress[0]--;
+		}
+		if(inhibitBtnPress[1])
+		{
+			inhibitBtnPress[1]--;
+		}
+		if(inhibitBtnPress[2])
+		{
+			inhibitBtnPress[2]--;
+		}
 		break;
 	default:
 		return NOK;
