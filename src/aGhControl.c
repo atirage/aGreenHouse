@@ -140,7 +140,7 @@ static void checkAlert(unsigned short int dbSensId, float value, t_e_unit unit);
 const t_s_thread_func SensThreadCfg[NR_SENS_TYPE] = {
         read1wTempSensor,   //_1W_TEMP
         readPwmFlowSensor,  //PWM_FLOW
-		dummyThread,//readDhtSensor,      //DHT_HMD_TEMP
+		readDhtSensor,      //DHT_HMD_TEMP
 		readRfSwitch,       //RF_SWITCH
         NULL                //SENS_UNKNOWN
 };
