@@ -1075,7 +1075,8 @@ void *readDhtSensor(void *self)
     param.sched_priority = sched_get_priority_max(SCHED_FIFO);
     if(sched_setscheduler(0, SCHED_FIFO, &param) == -1)
     {
-            syslog(LOG_ERR, "Cannot increase Dht reading priority!");
+            syslog(LOG_ERR, "Cannot increase Dht reading priority: %d!", errno);
+            perror("sched_setscheduler");
             return NULL;
     }
     
