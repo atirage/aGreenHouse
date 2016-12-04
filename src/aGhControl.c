@@ -140,7 +140,7 @@ static void checkAlert(unsigned short int dbSensId, float value, t_e_unit unit);
 const t_s_thread_func SensThreadCfg[NR_SENS_TYPE] = {
         read1wTempSensor,   //_1W_TEMP
         readPwmFlowSensor,  //PWM_FLOW
-		readDhtSensor,      //DHT_HMD_TEMP
+		dummyThread,//readDhtSensor,      //DHT_HMD_TEMP
 		readRfSwitch,       //RF_SWITCH
         NULL                //SENS_UNKNOWN
 };
@@ -1069,16 +1069,19 @@ void *readDhtSensor(void *self)
     unsigned char Pin;
     unsigned TimeStamp;
     float params[NR_UNITS] = {0};
-    struct sched_param param = {0};  
+    struct sched_param param = {0};
     
     /* increase thread prio */
     param.sched_priority = sched_get_priority_max(SCHED_FIFO);
-    if(sched_setscheduler(0, SCHED_FIFO, &param) == -1)
+    if(pthread_setschedparam(SensPtr->WorkerThread, SCHED_FIFO, &param) == -1)
     {
             syslog(LOG_ERR, "Cannot increase Dht reading priority: %d!", errno);
             perror("sched_setscheduler");
             return NULL;
     }
+#ifdef DEBUG
+    syslog(LOG_INFO, "Increased to priority: %d!", param.sched_priority);
+#endif
     
     /* get gpio pin from Db */
     if(getWPiPin(SensPtr->AccessedBy, &Pin) < 0)
@@ -1091,7 +1094,7 @@ void *readDhtSensor(void *self)
     while(1)
     {
         if(getDht22Values(Pin, &DhtValues) != OK)
-        {/* unsuccesful, try again later */
+        {/* unsuccessful, try again later */
             syslog(LOG_ERR, "Error reading sensor: %d!\n", SensPtr->DbId);
             sleep(10);
         }
@@ -1270,6 +1273,16 @@ void *controlHysteresis(void * self)
     float Param;
     char queryString[50];
     int rc;
+    struct sched_param param = {0};
+
+    /* increase thread prio */
+    param.sched_priority = sched_get_priority_max(SCHED_FIFO);
+    if(pthread_setschedparam(ActPtr->WorkerThread, SCHED_FIFO, &param) == -1)
+    {
+    	syslog(LOG_ERR, "Cannot increase thread priority: %d!", errno);
+        perror("sched_setscheduler");
+        return NULL;
+    }
 
     ptrFct = (t_s_temp_hyst_fct *)ActPtr->ctrlFnc;
     if(getWPiPin(ActPtr->AccessedBy, &Pin) < 0)

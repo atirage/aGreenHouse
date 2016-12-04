@@ -60,8 +60,7 @@ unsigned int get1wTemperature(char *devicePath, int *tempRawVal)
 
 unsigned int getDht22Values(unsigned char pin, t_s_dht_values *dhtValues)
 {
-    unsigned char buffer[5] = {0},
-                          byteInd = 0, bitInd = 0, feCnt = 3, state, laststate;
+    unsigned char buffer[5] = {0}, byteInd = 0, bitInd = 0, feCnt = 3, state, laststate;
     unsigned t1, t2, dt;
     
     /* start seq */
@@ -232,7 +231,7 @@ unsigned int getRfSwitch(int devFd, unsigned char *switches)
 		if(inhibitBtnPress[1] == 0)
 		{
 			*switches |= RF_SWITCH_BOTTOM_LEFT_MASK;
-			inhibitBtnPress[1] = 1;
+			inhibitBtnPress[1] = 2;
 		}
 		break;
 	case 0x32:
