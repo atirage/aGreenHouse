@@ -39,6 +39,7 @@ typedef enum {
 typedef enum {
     ON_OFF_TIME = 0,
     ON_OFF_FDB,
+	ON_OFF_SLAVE,
     ACT_UNKNOWN,
     NR_ACT_TYPE
 }t_e_actuator_type;
@@ -124,6 +125,7 @@ void *readDhtSensor(void *self);
 void *readPwmFlowSensor(void *self);
 void *controlTimeRelay(void * self);
 void *controlHysteresis(void * self);
+void *controlSlave(void *self);
 void *readRfSwitch(void *self);
 void *dummyThread(void *self);
 
@@ -148,6 +150,7 @@ const t_s_thread_func SensThreadCfg[NR_SENS_TYPE] = {
 const t_s_thread_func ActThreadCfg[NR_ACT_TYPE] = {
         controlTimeRelay,    //ON_OFF_TIME
         controlHysteresis,   //ON_OFF_FDB
+		controlSlave,		 //ON_OFF_SLAVE
         NULL                 //ACT_UNKNOWN
 };
 
@@ -525,9 +528,9 @@ static int getAllActuators_CB(void *countRow, int nCol, char **valCol, char **na
         actuators[i].Type = ON_OFF_FDB;
         actuators[i].FdbUnit = U_PERCENT;
     }
-    else if(strcmp(valCol[3], "ON_OFF_FDB_DIG") == 0)
+    else if(strcmp(valCol[3], "ON_OFF_SLAVE") == 0)
     {
-        actuators[i].Type = ON_OFF_FDB;
+        actuators[i].Type = ON_OFF_SLAVE;
         actuators[i].FdbUnit = U_NONE;
     }
     else
@@ -1048,10 +1051,37 @@ void *readRfSwitch(void *self)
             		syslog(LOG_ERR, "SQL error when inserting values for sensor: %d !\n", SensPtr->DbId);
             	}
             	/* issue cmd to actuators if configured */
-            	if(SensPtr->headAct)
+            	t_s_act_list *actList = SensPtr->headAct;
+            	while(actList)
             	{
-            		params[U_NONE] = (float)SwitchState;
-            		issueActCmd(SensPtr->headAct, params);
+            		if(actList->ptrAct->Type == ON_OFF_SLAVE)
+            		{
+            			if(pthread_mutex_trylock(&(actList->ptrAct->cmd_mutex)) != EBUSY)
+						{/* lock succeeded -> action relay */
+    						unsigned char Pin;
+						    if(getWPiPin(actList->ptrAct->AccessedBy, &Pin) < 0)
+						    {
+								if(SwitchState)
+								{
+									setRelay(Pin, LOW, actList->ptrAct->supervisionCycle);
+								}
+								else
+								{
+									setRelay(Pin, HIGH, actList->ptrAct->supervisionCycle);
+								}
+						    }
+						    else
+						    {
+						    	syslog(LOG_ERR, "Invalid Pin for ActuatorInd: %d \n", actList->ptrAct->DbId);
+						    }
+							pthread_mutex_unlock(&(actList->ptrAct->cmd_mutex));
+						}
+            			else
+            			{
+            				syslog(LOG_INFO, "Actuator %d cannot be locked\n", actList->ptrAct->DbId);
+            			}
+            		}
+            		actList = actList->nextAct;
             	}
             }
         	/* go back to sleep */
@@ -1355,6 +1385,61 @@ void *controlHysteresis(void * self)
                 syslog(LOG_ERR, "SQL error when querying for actuator %d\n", ActPtr->DbId);
                 //send back NOK
             }
+            break;
+        case CMD_RELEASE:
+        default:
+            Ovride = FALSE;
+            break;
+        }
+    }
+    return NULL;
+}
+
+void *controlSlave(void *self)
+{
+    t_s_actuator *ActPtr = (t_s_actuator *) self;
+    unsigned char Pin, Cmd, Ovride = FALSE;
+    float Param;
+
+    if(getWPiPin(ActPtr->AccessedBy, &Pin) < 0)
+    {
+        syslog(LOG_ERR, "Invalid Pin for ActuatorInd: %d \n", ActPtr->DbId);
+        return NULL;
+    }
+    /* command handling */
+    while(1)
+    {
+     /* wait for cmd */
+        pthread_mutex_lock(&(ActPtr->cmd_mutex));
+        pthread_cond_wait(&(ActPtr->cmd_cv), &(ActPtr->cmd_mutex));
+        Cmd = ActPtr->extCmd;
+        Param = ActPtr->paramCmd;
+        pthread_mutex_unlock(&(ActPtr->cmd_mutex));
+
+        syslog(LOG_INFO, "Command received for %d with param %f \n", ActPtr->DbId, Param);
+        switch(Cmd)
+        {
+        case CMD_ACTIVATE:
+            /* activate and insert into activation history */
+            Ovride = TRUE;
+            setRelay(Pin, LOW, ActPtr->supervisionCycle);
+            if((insertActuatorState(ActPtr, 1, U_NONE)) != SQLITE_OK)
+            {
+                syslog(LOG_ERR, "SQL error when inserting state for actuator: %d !\n", ActPtr->DbId);
+            }
+            break;
+        case CMD_DEACTIVATE:
+            /* deactivate and insert into activation history */
+            Ovride = TRUE;
+            setRelay(Pin, HIGH, ActPtr->supervisionCycle);
+            if((insertActuatorState(ActPtr, 0, U_NONE)) != SQLITE_OK)
+            {
+                syslog(LOG_ERR, "SQL error when inserting state for actuator: %d !\n", ActPtr->DbId);
+            }
+            break;
+        case CMD_CALCULATE:
+        case CMD_UPDATE_FNC:
+        	/* not supported */
             break;
         case CMD_RELEASE:
         default:
