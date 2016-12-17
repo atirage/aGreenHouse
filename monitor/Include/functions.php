@@ -159,13 +159,15 @@
             $form = $form.'Pattern<input type="text" size="15" name="Field1" value="'.$substr[0].'">';
             $form = $form.'Period<input type="text" size="3" name="Field2" value="'.$substr[1].'">';
         }
-        else if($act['Type'] == 'ON_OFF_FDB_T')
+        else if(($act['Type'] == 'ON_OFF_FDB_T') || ($act['Type'] == 'ON_OFF_FDB_H'))
         {
             $form = $form.'Threshold<input type="text" size="3" name="Field1" value="'.$substr[0].'">';
             $form = $form.'Hysteresis<input type="text" size="3" name="Field2" value="'.$substr[1].'">';
         }
         else
-        {
+        {/*dummy, if no ctrl fct*/
+            $form = $form.'<input type="hidden" name="Field1" value="0">';
+            $form = $form.'<input type="hidden" name="Field2" value="0">';
         }
         return $form.'<br><input type="submit" value="Execute"></form>';
     }

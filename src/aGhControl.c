@@ -1045,11 +1045,6 @@ void *readRfSwitch(void *self)
         	if ((Switches & RF_SWITCH_BOTTOM_LEFT_MASK) != 0)
             {/* bottom right button pressed, flip switch state */
             	SwitchState = (~SwitchState) & 0x01u;
-            	/* insert into DB */
-            	if(insertSensorValue(SensPtr, SwitchState, U_NONE, (unsigned)time(NULL)) != SQLITE_OK)
-            	{
-            		syslog(LOG_ERR, "SQL error when inserting values for sensor: %d !\n", SensPtr->DbId);
-            	}
             	/* issue cmd to actuators if configured */
             	t_s_act_list *actList = SensPtr->headAct;
             	while(actList)
@@ -1061,6 +1056,10 @@ void *readRfSwitch(void *self)
     						unsigned char Pin;
 						    if(getWPiPin(actList->ptrAct->AccessedBy, &Pin) < 0)
 						    {
+						    	syslog(LOG_ERR, "Invalid Pin for ActuatorInd: %d \n", actList->ptrAct->DbId);
+						    }
+						    else
+						    {
 								if(SwitchState)
 								{
 									setRelay(Pin, LOW, actList->ptrAct->supervisionCycle);
@@ -1070,10 +1069,6 @@ void *readRfSwitch(void *self)
 									setRelay(Pin, HIGH, actList->ptrAct->supervisionCycle);
 								}
 						    }
-						    else
-						    {
-						    	syslog(LOG_ERR, "Invalid Pin for ActuatorInd: %d \n", actList->ptrAct->DbId);
-						    }
 							pthread_mutex_unlock(&(actList->ptrAct->cmd_mutex));
 						}
             			else
@@ -1082,6 +1077,11 @@ void *readRfSwitch(void *self)
             			}
             		}
             		actList = actList->nextAct;
+            	}
+            	/* insert into DB */
+            	if(insertSensorValue(SensPtr, SwitchState, U_NONE, (unsigned)time(NULL)) != SQLITE_OK)
+            	{
+            		syslog(LOG_ERR, "SQL error when inserting values for sensor: %d !\n", SensPtr->DbId);
             	}
             }
         	/* go back to sleep */
@@ -1130,6 +1130,12 @@ void *readDhtSensor(void *self)
         }
         else
         {
+            if(SensPtr->headAct)
+            {
+                params[U_C] = DhtValues.temperature;
+                params[U_PERCENT] = DhtValues.humidity;
+                issueActCmd(SensPtr->headAct, params);
+            }
             /* insert into DB */
             TimeStamp = (unsigned)time(NULL);
             if(insertSensorValue(SensPtr, DhtValues.humidity, U_PERCENT, TimeStamp) != SQLITE_OK)
@@ -1139,12 +1145,6 @@ void *readDhtSensor(void *self)
             if(insertSensorValue(SensPtr, DhtValues.temperature, U_C, TimeStamp) != SQLITE_OK)
             {
                 syslog(LOG_ERR, "SQL error when inserting values for sensor: %d !\n", SensPtr->DbId);
-            }
-            if(SensPtr->headAct)
-            {
-                params[U_C] = DhtValues.temperature;
-                params[U_PERCENT] = DhtValues.humidity;
-                issueActCmd(SensPtr->headAct, params);
             }
             /* check alert */
             checkAlert(SensPtr->DbId, DhtValues.temperature, U_C);
@@ -1177,16 +1177,16 @@ void *readPwmFlowSensor(void *self)
         }
         else
         {
-            /* insert into DB */
-            if(insertSensorValue(SensPtr, flowRate, U_L_PER_MIN, (unsigned)time(NULL)) != SQLITE_OK)
-            {
-                syslog(LOG_ERR, "SQL error when inserting values for sensor: %d !\n", SensPtr->DbId);
-            }
             /* issue cmd to actuators if configured */
             if(SensPtr->headAct)
             {
                 params[U_L_PER_MIN] = flowRate;
                 issueActCmd(SensPtr->headAct, params);
+            }
+            /* insert into DB */
+            if(insertSensorValue(SensPtr, flowRate, U_L_PER_MIN, (unsigned)time(NULL)) != SQLITE_OK)
+            {
+                syslog(LOG_ERR, "SQL error when inserting values for sensor: %d !\n", SensPtr->DbId);
             }
             /* check alert */
             checkAlert(SensPtr->DbId, flowRate, U_L_PER_MIN);

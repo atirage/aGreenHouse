@@ -52,7 +52,7 @@ if(isset($_POST['Tab']))
         exec("pgrep aGreenHouse", $output, $return);
         if($return == 0)
         {//backend is running
-            if(($fifo = fopen('/var/lib/aGreenhouse/cmdFIFO', 'w')) == false)
+            if(($fifo = fopen('/var/lib/aGreenHouse/cmdFIFO', 'w')) == false)
             {
                 $errmsg = "Error opening command FIFO!";
             }
@@ -73,7 +73,7 @@ if(isset($_POST['Tab']))
                 else
                 {
                     fclose($fifo);
-                    if(($fifo = fopen('/var/lib/aGreenhouse/respFIFO', 'r')) == false)
+                    if(($fifo = fopen('/var/lib/aGreenHouse/respFIFO', 'r')) == false)
                     {
                         $errmsg = "Error opening response FIFO!";
                     }
