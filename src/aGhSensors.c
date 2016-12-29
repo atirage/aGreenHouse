@@ -5,10 +5,14 @@
 #include <sched.h>
 #include <poll.h>
 #include <unistd.h>
+#include <syslog.h>
 
 #include "aGhSensors.h"
 
+#define DEBUG
+
 #define RF_FRAME_SIZE (7u)
+#define DHT_TYPE (11)
 
 static unsigned dtAbs(unsigned t1, unsigned t2);
 
@@ -66,7 +70,11 @@ unsigned int getDht22Values(unsigned char pin, t_s_dht_values *dhtValues)
     /* start seq */
     pinMode(pin, OUTPUT);
     digitalWrite(pin, LOW);
+#if (DHT_TYPE == 11)
+    usleep(18000);
+#else// if (DHT_TYPE == 22)
     usleep(700);
+#endif
     digitalWrite(pin, HIGH);
     
     /* read sensor data */
@@ -109,15 +117,22 @@ unsigned int getDht22Values(unsigned char pin, t_s_dht_values *dhtValues)
     /* check CRC */
     if((((unsigned char)(buffer[0] + buffer[1] + buffer[2] + buffer[3]) != buffer[4])) || (buffer[4] == 0))
     {
-        return NOK;
+#ifdef DEBUG
+    	syslog(LOG_INFO, "DhtXX: %d|%d|%d|%d|%d\n",buffer[0], buffer[1], buffer[2], buffer[3], buffer[4]);
+#endif
+    	return NOK;
     }
-
+#if (DHT_TYPE == 11)
+    dhtValues->humidity = buffer[0];
+    dhtValues->temperature = buffer[2];
+#else //if (DHT_TYPE == 22)
     dhtValues->humidity = (buffer[0] * 256 + buffer[1]) / 10.0;
     dhtValues->temperature = ((buffer[2] & 0x7F) * 256 + buffer[3]) / 10.0;
     if(buffer[2] & 0x80)
     {
         dhtValues->temperature *= (-1);
     }
+#endif
     return OK;
 }
 
