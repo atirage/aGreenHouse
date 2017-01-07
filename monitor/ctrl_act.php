@@ -16,12 +16,19 @@ $sel = array();
 
 //get actuators
 $sql = "SELECT Ind, Location, Type, ControlFunc FROM Actuators";
-$result = $sqlObj->query($sql);
-while($res = $result->fetchArray(SQLITE3_ASSOC))
-{
-    $actuators[]=$res;
-    $sel[]='0';
-}
+do{
+	$result = $sqlObj->query($sql);
+	if($result instanceof Sqlite3Result)
+	{
+		while($res = $result->fetchArray(SQLITE3_ASSOC))
+		{
+    		$actuators[]=$res;
+    		$sel[]='0';
+		}
+		break;
+	}
+	sleep(1);
+}while(1);
 
 if(isset($_POST['Tab']))
 {/* submit from tab */
@@ -82,7 +89,7 @@ if(isset($_POST['Tab']))
                         stream_set_timeout($fifo, 2);
                         $respStr = fread($fifo, 2);
                         $info = stream_get_meta_data($fifo);
-                        $errmsg = 'response received!';
+                        //for debugging purposes: $errmsg = 'response received!';
                         fclose($fifo);
                         if ($info['timed_out'])
                         {

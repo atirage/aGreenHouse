@@ -1068,6 +1068,10 @@ void *readRfSwitch(void *self)
 								{
 									setRelay(Pin, HIGH, actList->ptrAct->supervisionCycle);
 								}
+					            if((insertActuatorState(actList->ptrAct, SwitchState, U_NONE)) != SQLITE_OK)
+					            {
+					                syslog(LOG_ERR, "SQL error when inserting state for actuator: %d !\n", actList->ptrAct);
+					            }
 						    }
 							pthread_mutex_unlock(&(actList->ptrAct->cmd_mutex));
 						}
