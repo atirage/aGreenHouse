@@ -100,7 +100,16 @@
         {
             if($res['Unit'] != $last_unit)
             {
-                $columns = $columns.' data.addColumn("number", "'.$res['Unit'].'");';
+                $unit = '';
+                if($res['Unit'] == 'oC')
+                {
+                	$unit = "\u00BAC";
+                }
+                else
+                {
+                	$unit = $res['Unit'];
+                }
+                $columns = $columns.' data.addColumn("number", "'.$unit.'");';
                 if($last_unit != '')
                 {
                     $first = false;
@@ -198,6 +207,10 @@
             if(($obj == ACTUATORS) && ($res['Unit'] == 'NONE'))
             {
                 $php_array[$i][] = ($res['Value'] == 1)?'ON':'OFF'; 
+            }
+            else if(($obj == SENSORS) && ($res['Unit'] == 'oC'))
+            {
+                $php_array[$i][] = $res['Value']." \u00BAC";
             }
             else
             {

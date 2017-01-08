@@ -60,12 +60,13 @@ $uptime = explode(' up ', $data);
 $uptime = explode(',', $uptime[1]);
 $uptime = $uptime[0].', '.$uptime[1];
 
-$content =  $content .'<br><b>CPU temperature:</b> '.$temp.' <sup>o</sup>C<br>';
+$content =  $content .'<br><b>CPU temperature:</b> '.$temp.' &degC<br>';
 $content =  $content .'<br><b>GSM Signal Quality:</b> ' .$rssi_dBm.' dBm ('.$sig_qlty.')<br>';
 $content =  $content .'<br><b>System Uptime:</b> ' .$uptime;
 
-$js_array_sens = json_encode(getCurrentState(SENSORS));
-$js_array_act = json_encode(getCurrentState(ACTUATORS));
+$js_array_sens = json_encode(getCurrentState(SENSORS), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+$js_array_sens = stripslashes($js_array_sens); //needed due to unicode char in the string
+$js_array_act = json_encode(getCurrentState(ACTUATORS), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 $jscript = 'google.load("visualization", "1", {packages:["table"]});
                 function drawChartSens() {
                     var data = new google.visualization.DataTable();
