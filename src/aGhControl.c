@@ -31,7 +31,7 @@ typedef enum {
     _1W_TEMP = 0,
     PWM_FLOW,
     DHT_HMD_TEMP,
-    RF_SWITCH,
+    RF_WATCH,
     SENS_UNKNOWN,
     NR_SENS_TYPE
 }t_e_sensor_type;
@@ -39,6 +39,8 @@ typedef enum {
 typedef enum {
     ON_OFF_TIME = 0,
     ON_OFF_FDB,
+	SOCKET_CTRL_LED,
+	SOCKET_CTRL_KODI,
     ACT_UNKNOWN,
     NR_ACT_TYPE
 }t_e_actuator_type;
@@ -56,6 +58,8 @@ typedef enum {
     CMD_ACTIVATE,
     CMD_DEACTIVATE,
     CMD_CALCULATE,
+	CMD_DIM,
+	CMD_SET_COLOR,
     CMD_UPDATE_FNC
 }t_e_ext_cmd;
 
@@ -124,7 +128,7 @@ void *readDhtSensor(void *self);
 void *readPwmFlowSensor(void *self);
 void *controlTimeRelay(void * self);
 void *controlHysteresis(void * self);
-void *readRfSwitch(void *self);
+void *readRfWatch(void *self);
 void *dummyThread(void *self);
 
 /* misc */
@@ -141,13 +145,15 @@ const t_s_thread_func SensThreadCfg[NR_SENS_TYPE] = {
         read1wTempSensor,   //_1W_TEMP
         readPwmFlowSensor,  //PWM_FLOW
 		readDhtSensor,      //DHT_HMD_TEMP
-		readRfSwitch,       //RF_SWITCH
+		readRfWatch,        //RF_WATCH
         NULL                //SENS_UNKNOWN
 };
 /* map actuator type to thread function */
 const t_s_thread_func ActThreadCfg[NR_ACT_TYPE] = {
         controlTimeRelay,    //ON_OFF_TIME
         controlHysteresis,   //ON_OFF_FDB
+        dummyThread,         //SOCKET_CTRL_LED
+		dummyThread,         //SOCKET_CTRL_KODI
         NULL                 //ACT_UNKNOWN
 };
 
@@ -461,9 +467,9 @@ static int getAllSensors_CB(void *countRow, int nCol, char **valCol, char **name
     {
         sensors[i].Type = PWM_FLOW;
     }
-    else if(strcmp(valCol[3], "RfSwitch") == 0)
+    else if(strcmp(valCol[3], "RfWatch") == 0)
     {
-    	sensors[i].Type = RF_SWITCH;
+    	sensors[i].Type = RF_WATCH;
 	}
     else
     {
@@ -970,12 +976,12 @@ void *read1wTempSensor(void *self)
     return NULL;
 }
 
-void *readRfSwitch(void *self)
+void *readRfWatch(void *self)
 {
     const t_s_sensor *SensPtr = (const t_s_sensor *) self;
-    static unsigned char SwitchState = 0;
+    static unsigned char SwitchState;
+    t_s_rf_watch_values rfValues;
     char devPath[46];
-    unsigned char Switches;
     int devFd;
     struct termios cf;
     float params[NR_UNITS] = {0};
@@ -1021,12 +1027,12 @@ void *readRfSwitch(void *self)
 
     /* wait for presses */
 #ifdef DEBUG
-    syslog(LOG_INFO, "Waiting for button presses... \n");
+    syslog(LOG_INFO, "Waiting for transmission... \n");
 #endif
     while(1)
     {
         char bytesRcvd;
-    	if(getRfSwitch(devFd, &Switches) != OK)
+    	if(getRfWatchValues(devFd, &rfValues) != OK)
         {/* unsuccessful, try again later */
             syslog(LOG_ERR, "Error reading sensor: %d!\n", SensPtr->DbId);
             sleep(10);
@@ -1039,7 +1045,7 @@ void *readRfSwitch(void *self)
         		syslog(LOG_INFO, "Read switch: %d", Switches);
         	}
 #endif
-        	if ((Switches & RF_SWITCH_BOTTOM_LEFT_MASK) != 0)
+        	if ((rfValues.switches & RF_SWITCH_BOTTOM_LEFT_MASK) != 0)
             {/* bottom right button pressed, flip switch state */
             	SwitchState = (~SwitchState) & 0x01u;
             	/* issue cmd to actuators if configured */

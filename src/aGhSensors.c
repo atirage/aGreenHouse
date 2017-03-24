@@ -214,7 +214,7 @@ unsigned int makeRfLink(int devFd)
 }
 
 /* function needs to be called cyclically, for one button press the RF watch generates more frames, this needs to be filtered out */
-unsigned int getRfSwitch(int devFd, unsigned char *switches)
+unsigned int getRfWatchValues(int devFd, t_s_rf_watch_values *rfValues)
 {
 	static const unsigned char data_req[RF_FRAME_SIZE] = {0xFF, 0x08, 0x07, 0x00, 0x00, 0x00, 0x00};
 	unsigned char buffer[RF_FRAME_SIZE];
@@ -227,52 +227,64 @@ unsigned int getRfSwitch(int devFd, unsigned char *switches)
 
 	if( (read(devFd, buffer, RF_FRAME_SIZE) != RF_FRAME_SIZE) ||
 	    (buffer[0] != 0xFF || buffer[1] != 0x6 || buffer[2] != 0x7) )
-	{
+	{/* invalid response */
 		return NOK;
 	}
 
 	/* valid response */
-	*switches = 0x00u;
-	switch(buffer[3])
+	rfValues->switches = RF_SWITCH_NONE_MASK;
+	rfValues->acc_fresh = FALSE;
+	if(1 == buffer[3])
+	{/* acc data */
+		rfValues->acc_fresh = TRUE;
+		rfValues->acc_x = buffer[5];
+		rfValues->acc_y = buffer[4];
+		rfValues->acc_z = buffer[6];
+	}
+	else
 	{
-	case 0x12:
-		if(inhibitBtnPress[0] == 0)
+
+		switch(buffer[3])
 		{
-			*switches |= RF_SWITCH_TOP_LEFT_MASK;
-			inhibitBtnPress[0] = 1;
+		case 0x12:
+			if(inhibitBtnPress[0] == 0)
+			{
+				rfValues->switches |= RF_SWITCH_TOP_LEFT_MASK;
+				inhibitBtnPress[0] = 1;
+			}
+			break;
+		case 0x22:
+			if(inhibitBtnPress[1] == 0)
+			{
+				rfValues->switches |= RF_SWITCH_BOTTOM_LEFT_MASK;
+				inhibitBtnPress[1] = 2;
+			}
+			break;
+		case 0x32:
+			if(inhibitBtnPress[2] == 0)
+			{
+				rfValues->switches |= RF_SWITCH_TOP_RIGHT_MASK;
+				inhibitBtnPress[2] = 5;
+			}
+			break;
+		case 0xFF:
+			if(inhibitBtnPress[0])
+			{
+				inhibitBtnPress[0]--;
+			}
+			if(inhibitBtnPress[1])
+			{
+				inhibitBtnPress[1]--;
+			}
+			if(inhibitBtnPress[2])
+			{
+				inhibitBtnPress[2]--;
+			}
+			break;
+		default:
+			return NOK;
+			break;
 		}
-		break;
-	case 0x22:
-		if(inhibitBtnPress[1] == 0)
-		{
-			*switches |= RF_SWITCH_BOTTOM_LEFT_MASK;
-			inhibitBtnPress[1] = 2;
-		}
-		break;
-	case 0x32:
-		if(inhibitBtnPress[2] == 0)
-		{
-			*switches |= RF_SWITCH_TOP_RIGHT_MASK;
-			inhibitBtnPress[2] = 5;
-		}
-		break;
-	case 0xFF:
-		if(inhibitBtnPress[0])
-		{
-			inhibitBtnPress[0]--;
-		}
-		if(inhibitBtnPress[1])
-		{
-			inhibitBtnPress[1]--;
-		}
-		if(inhibitBtnPress[2])
-		{
-			inhibitBtnPress[2]--;
-		}
-		break;
-	default:
-		return NOK;
-		break;
 	}
     return OK;
 }
