@@ -7,8 +7,12 @@
 #define OK      0
 #define NOK     1
 
-#define FALSE   0
-#define TRUE    1
+#ifndef FALSE
+#	define FALSE   0
+#endif
+#ifndef TRUE
+#	define TRUE    1
+#endif
 
 #define RF_SWITCH_NONE_MASK        (0x00u)
 #define RF_SWITCH_TOP_LEFT_MASK    (0x01u)

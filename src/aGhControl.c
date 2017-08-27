@@ -1040,9 +1040,9 @@ void *readRfWatch(void *self)
         else
         {
 #ifdef DEBUG
-        	if(Switches)
+        	if(rfValues.switches)
         	{
-        		syslog(LOG_INFO, "Read switch: %d", Switches);
+        		syslog(LOG_INFO, "Read switch: %d", rfValues.switches);
         	}
 #endif
         	if ((rfValues.switches & RF_SWITCH_BOTTOM_LEFT_MASK) != 0)
