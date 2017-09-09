@@ -1,6 +1,9 @@
 #include <stdio.h>
+#include <stdbool.h>
 #include <string.h>
 #include <time.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 #include "aGhActuators.h"
 
 static void addTimeStamp(unsigned char pin, unsigned short int supervisionCycle);
@@ -12,6 +15,31 @@ void setRelay(unsigned char pin, unsigned char HiLo, unsigned short int supervis
     digitalWrite(pin, HiLo);
     /* timestamp it */
     addTimeStamp(pin, supervisionCycle);
+}
+
+bool sendUDPCmd(const UDPCommand *cmd)
+{
+    bool retVal = FALSE;
+    int bytesSent = 0;
+    int udpSocket = socket (AF_INET, SOCK_DGRAM, 0);
+
+    if (udpSocket >= 0)
+    {
+        char command[3] = {cmd->code, cmd->param, 0x55};
+        struct sockaddr_in destSockAddr;
+
+        memset (&destSockAddr, 0, sizeof (destSockAddr));
+        destSockAddr.sin_family = AF_INET;
+        destSockAddr.sin_port = htons (cmd->port);
+        destSockAddr.sin_addr.s_addr = inet_addr (cmd->address);
+        bytesSent = sendto (udpSocket, command, 3, 0, (const struct sockaddr*)&destSockAddr, sizeof (destSockAddr));
+        if (bytesSent >= 0)
+        {
+            retVal = TRUE;
+        }
+        close (udpSocket);
+    }
+    return retVal;
 }
 
 static void addTimeStamp(unsigned char pin, unsigned short int supervisionCycle)

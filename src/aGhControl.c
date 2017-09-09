@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include <sqlite3.h>
 #include <pthread.h>
 #include <string.h>
@@ -39,8 +40,8 @@ typedef enum {
 typedef enum {
     ON_OFF_TIME = 0,
     ON_OFF_FDB,
-	SOCKET_CTRL_LED,
-	SOCKET_CTRL_KODI,
+    SOCKET_CTRL_LED,
+    SOCKET_CTRL_KODI,
     ACT_UNKNOWN,
     NR_ACT_TYPE
 }t_e_actuator_type;
@@ -58,8 +59,8 @@ typedef enum {
     CMD_ACTIVATE,
     CMD_DEACTIVATE,
     CMD_CALCULATE,
-	CMD_DIM,
-	CMD_SET_COLOR,
+    CMD_DIM,
+    CMD_SET_COLOR,
     CMD_UPDATE_FNC
 }t_e_ext_cmd;
 
@@ -71,11 +72,12 @@ typedef struct {
     char Location[LOCATION_SIZE];                  /* physical location of sensor */
     char AccessedBy[ACCESSED_BY_SIZE];             /* connection to the raspberry, for ex. file, gpio, etc */
     t_e_actuator_type Type;                        /* type of sensor, defines how the actuator will be handled */
-    t_e_unit FdbUnit;							   /* unit of feedback, if any */
+    t_e_unit FdbUnit;                              /* unit of feedback, if any */
     void *ctrlFnc;                                 /* assigned control func */
     t_e_ext_cmd extCmd;                            /* external cmd */
     float paramCmd;                                /* command parameter */
     unsigned short int supervisionCycle;           /* if actuator output is not refreshed with at least this period a reset is triggered */
+    bool log_actuation;
 }t_s_actuator;
 
 typedef struct tag_s_act_list{
@@ -129,6 +131,7 @@ void *readPwmFlowSensor(void *self);
 void *controlTimeRelay(void * self);
 void *controlHysteresis(void * self);
 void *readRfWatch(void *self);
+void *controlWifiLED(void *self);
 void *dummyThread(void *self);
 
 /* misc */
@@ -139,21 +142,23 @@ static unsigned short int getActuatorInd(unsigned short int dbId);
 static void issueActCmd(t_s_act_list *actList, float *paramList);
 static void appendUnit(char *unitString, t_e_unit unit);
 static void checkAlert(unsigned short int dbSensId, float value, t_e_unit unit);
+static void handleSwitches(t_s_sensor *sensPtr, unsigned char switches);
+static void handleAccData(t_s_sensor *sensPtr, const t_s_rf_watch_values *rfValues);
 
 /* map sensor type to thread function */
 const t_s_thread_func SensThreadCfg[NR_SENS_TYPE] = {
         read1wTempSensor,   //_1W_TEMP
         readPwmFlowSensor,  //PWM_FLOW
-		readDhtSensor,      //DHT_HMD_TEMP
-		readRfWatch,        //RF_WATCH
+        readDhtSensor,      //DHT_HMD_TEMP
+        readRfWatch,        //RF_WATCH
         NULL                //SENS_UNKNOWN
 };
 /* map actuator type to thread function */
 const t_s_thread_func ActThreadCfg[NR_ACT_TYPE] = {
         controlTimeRelay,    //ON_OFF_TIME
         controlHysteresis,   //ON_OFF_FDB
-        dummyThread,         //SOCKET_CTRL_LED
-		dummyThread,         //SOCKET_CTRL_KODI
+        controlWifiLED,      //SOCKET_CTRL_LED
+        dummyThread,         //SOCKET_CTRL_KODI
         NULL                 //ACT_UNKNOWN
 };
 
@@ -175,7 +180,7 @@ static void cleanup(void)
     {
         for(i=0; i < nrSens; i++)
         {
-            if(sensors[i].headAct) 
+            if(sensors[i].headAct)
             {
                 //todo: free list
             }
@@ -295,27 +300,27 @@ static void issueActCmd(t_s_act_list *actList, float *paramList)
         {
         case ON_OFF_FDB:
             actList->ptrAct->extCmd = CMD_CALCULATE;
-        	switch(actList->ptrAct->FdbUnit)
-        	{
-        	case U_C:
-        		actList->ptrAct->paramCmd = paramList[U_C];
-        		break;
-        	case U_L_PER_MIN:
-        		actList->ptrAct->paramCmd = paramList[U_L_PER_MIN];
-        		break;
-        	case U_PERCENT:
-        		actList->ptrAct->paramCmd = paramList[U_PERCENT];
-        		break;
-        	case U_NONE:
-        		actList->ptrAct->paramCmd = paramList[U_NONE];
-        		break;
-        	default:
-        		actList->ptrAct->paramCmd = 0;
-        		break;
-        	}
+            switch(actList->ptrAct->FdbUnit)
+            {
+            case U_C:
+                actList->ptrAct->paramCmd = paramList[U_C];
+                break;
+            case U_L_PER_MIN:
+                actList->ptrAct->paramCmd = paramList[U_L_PER_MIN];
+                break;
+            case U_PERCENT:
+                actList->ptrAct->paramCmd = paramList[U_PERCENT];
+                break;
+            case U_NONE:
+                actList->ptrAct->paramCmd = paramList[U_NONE];
+                break;
+            default:
+                actList->ptrAct->paramCmd = 0;
+                break;
+            }
             break;
         default:
-        	actList->ptrAct->extCmd = CMD_RELEASE;
+            actList->ptrAct->extCmd = CMD_RELEASE;
             actList->ptrAct->paramCmd = 0;
             break;
         }
@@ -364,7 +369,7 @@ static int updateActuatorCtrlFnc_CB(void *actPtr, int nCol, char **valCol, char 
     t_s_time_fct *ptrFct = NULL;
     char *delim = NULL;
     unsigned int k, tmp = 0;
-    
+
     switch(((t_s_actuator *)actPtr)->Type)
     {
     case ON_OFF_TIME:/* 1010..1010|1800 */
@@ -450,10 +455,10 @@ static int getAllSensors_CB(void *countRow, int nCol, char **valCol, char **name
     {
         sensors[i].Location[0] = 0;
     }
-    
+
     /* 2: Access - cannot be NULL */
     snprintf(sensors[i].AccessedBy, ACCESSED_BY_SIZE, "%s", (const char*)(valCol[2]));
-    
+
     /* 3: Type - cannot be NULL */
     if(strcmp(valCol[3], "1wTemp") == 0)
     {
@@ -477,7 +482,7 @@ static int getAllSensors_CB(void *countRow, int nCol, char **valCol, char **name
     }
     /* 4: Sample Time - cannot be NULL */
     sensors[i].SampleTime = strtol(valCol[4], NULL, 10);
-    
+
     sensors[i].headAct = NULL;
     (*((unsigned int *)countRow))++;
     return 0;
@@ -602,9 +607,16 @@ static int getAllActuators_CB(void *countRow, int nCol, char **valCol, char **na
         break;
     }
 
-     /* 5: SensInd - can be NULL*/
-     if(valCol[5] != NULL)
-     {
+    /* 5: log actuation */
+    actuators[i].log_actuation = FALSE;
+    if(0)/* to be handled */
+    {
+        actuators[i].log_actuation = TRUE;
+    }
+
+    /* 6: SensInd - can be NULL*/
+    if(valCol[5] != NULL)
+    {
         //find in sensors array
         j = getSensorInd(strtol(valCol[5], NULL, 10));
         if(j < nrSens) //found
@@ -627,8 +639,8 @@ static int getAllActuators_CB(void *countRow, int nCol, char **valCol, char **na
                 actList->nextAct->nextAct = NULL;
             }
         }
-     }
-     
+    }
+
     (*((unsigned int *)countRow))++;
     return 0;
 }
@@ -671,26 +683,30 @@ static int insertActuatorState(const t_s_actuator *self, float State, t_e_unit U
 {
     char queryString[120];
     char *zErrMsg = 0;
-    int rc;
-    /* prepare query string */
-    strcpy(queryString, "insert into Activations (ActuatorInd, Value, Unit, Timestamp) VALUES ('");
-    snprintf(queryString + strlen(queryString), 4, "%d", self->DbId);
-    strcat(queryString, "','");
+    int rc = SQLITE_OK;
 
-    snprintf(queryString + strlen(queryString), 7, "%.3f", State);
-    strcat(queryString, "','");
-    appendUnit(queryString, Unit);
-    strcat(queryString, "','");
-
-    snprintf(queryString + strlen(queryString), 11, "%d", (unsigned int)time(NULL));
-    strcat(queryString, "');");
-
-    /* insert into database */
-    rc = sqlite3_exec(db, queryString, NULL, 0, &zErrMsg);
-    if(rc != SQLITE_OK)
+    if(self->log_actuation)
     {
-        syslog(LOG_ERR, "SQL error: %s\n", zErrMsg);
-        sqlite3_free(zErrMsg);
+        /* prepare query string */
+        strcpy(queryString, "insert into Activations (ActuatorInd, Value, Unit, Timestamp) VALUES ('");
+        snprintf(queryString + strlen(queryString), 4, "%d", self->DbId);
+        strcat(queryString, "','");
+
+        snprintf(queryString + strlen(queryString), 7, "%.3f", State);
+        strcat(queryString, "','");
+        appendUnit(queryString, Unit);
+        strcat(queryString, "','");
+
+        snprintf(queryString + strlen(queryString), 11, "%d", (unsigned int)time(NULL));
+        strcat(queryString, "');");
+
+        /* insert into database */
+        rc = sqlite3_exec(db, queryString, NULL, 0, &zErrMsg);
+        if(rc != SQLITE_OK)
+        {
+            syslog(LOG_ERR, "SQL error: %s\n", zErrMsg);
+            sqlite3_free(zErrMsg);
+        }
     }
     return rc;
 }
@@ -699,7 +715,7 @@ static int getAlert_CB(void *Value, int nCol, char **valCol, char **nameCol)
 {
     pid_t pId = -1;
     float val =  *((float*)Value);
-    char mailCmd[150];   
+    char mailCmd[150];
     if((atof(valCol[2]) > val) || (atof(valCol[3]) < val))
     {
         snprintf(mailCmd, 150, "echo Sensor %s value: %f %s out of range [%s, %s]! | mail -s 'Sensor Alert' %s", valCol[1], val, valCol[4], valCol[2], valCol[3], valCol[5]);
@@ -707,17 +723,78 @@ static int getAlert_CB(void *Value, int nCol, char **valCol, char **nameCol)
         if (pId == 0)
         {// child
         #ifdef DEBUG
-            fprintf(stdout, mailCmd);  
+            fprintf(stdout, mailCmd);
             fprintf(stdout, "\n\n\n");
-        #endif 
+        #endif
             execl("/bin/sh", "sh", "-c", mailCmd, NULL);
         #ifdef DEBUG
-            fprintf(stdout, "Exec error!");  
+            fprintf(stdout, "Exec error!");
             fprintf(stdout, "\n\n\n");
-        #endif 
+        #endif
         }
     }
     return 0;
+}
+
+static void handleSwitches(t_s_sensor *sensPtr, unsigned char switches)
+{
+    static unsigned char SwitchStates[3];
+    t_s_act_list *actList = NULL;
+
+    if ((switches & RF_SWITCH_BOTTOM_LEFT_MASK) != 0)
+    {/* bottom left button pressed, flip switch state */
+        SwitchStates[0] = (~SwitchStates[0]) & 0x01u;
+    }
+    else if ((switches & RF_SWITCH_TOP_LEFT_MASK) != 0)
+    {/* top left button pressed, flip switch state */
+        SwitchStates[1] = (~SwitchStates[1]) & 0x01u;
+    }
+    else if ((switches & RF_SWITCH_TOP_RIGHT_MASK) != 0)
+    {/* top right button pressed, flip switch state */
+        SwitchStates[2] = (~SwitchStates[2]) & 0x01u;
+    }
+    else
+    {}
+    /* issue cmd to actuators if configured */
+    actList = sensPtr->headAct;
+    if(actList)
+    {
+        do
+        {
+            switch(actList->ptrAct->Type)
+            {
+            case ON_OFF_FDB:
+                pthread_mutex_lock(&(actList->ptrAct->cmd_mutex));
+                actList->ptrAct->paramCmd = SwitchStates[0];
+                actList->ptrAct->extCmd = CMD_CALCULATE;
+                pthread_cond_signal(&(actList->ptrAct->cmd_cv));
+                pthread_mutex_unlock(&(actList->ptrAct->cmd_mutex));
+                break;
+            case SOCKET_CTRL_LED:
+                pthread_mutex_lock(&(actList->ptrAct->cmd_mutex));
+                actList->ptrAct->paramCmd = SwitchStates[1];
+                actList->ptrAct->extCmd = CMD_CALCULATE;
+                pthread_cond_signal(&(actList->ptrAct->cmd_cv));
+                pthread_mutex_unlock(&(actList->ptrAct->cmd_mutex));
+                break;
+            default:
+                break;
+            }
+            actList = actList->nextAct;
+        }while(actList);
+    }
+    if(0)//(switches)
+    {/* insert into DB */
+        if(insertSensorValue(sensPtr, switches, U_NONE, (unsigned)time(NULL)) != SQLITE_OK)
+        {
+            syslog(LOG_ERR, "SQL error when inserting values for sensor: %d !\n", sensPtr->DbId);
+        }
+    }
+}
+
+static void handleAccData(t_s_sensor *sensPtr, const t_s_rf_watch_values *rfValues)
+{
+
 }
 
 /*---------- MAIN -------------*/
@@ -729,9 +806,9 @@ int main(void)
     unsigned int row;
     float param = 0;
     struct stat st = {0};
-    
+
     openlog("root", LOG_ODELAY, LOG_USER);
-    
+
     if(wiringPiSetup () < 0)
     {
         syslog(LOG_ERR, "Init error! Stopping!");
@@ -792,7 +869,7 @@ int main(void)
         cleanup();
         return ERR_APP_SQL;
     }
-    
+
     syslog(LOG_INFO, "-------------Preparing actuators------------- \n");
     /* query for the actuators */
     row = 0;
@@ -804,7 +881,7 @@ int main(void)
         cleanup();
         return ERR_APP_SQL;
     }
-    
+
     syslog(LOG_INFO, "Starting actuator threads... \n");
     /* start threads according to actuator type */
     rc = FALSE;
@@ -881,7 +958,7 @@ int main(void)
             }
             i=0;
             phase++;
-            if(c == '\n') 
+            if(c == '\n')
             {
                 actInd = getActuatorInd(actInd);
 #ifdef DEBUG
@@ -896,7 +973,7 @@ int main(void)
                         actuators[actInd].paramCmd = 0;
                         pthread_cond_signal(&(actuators[actInd].cmd_cv));
                         pthread_mutex_unlock(&(actuators[actInd].cmd_mutex));
-                    }                   
+                    }
                     pthread_mutex_lock(&(actuators[actInd].cmd_mutex));
                     actuators[actInd].extCmd = cmd;
                     actuators[actInd].paramCmd = 0;
@@ -930,7 +1007,7 @@ int main(void)
 void *dummyThread(void *self)
 {
     static unsigned timestamp;
-	while(1)
+    while(1)
     {
         usleep(5000);
     }
@@ -943,7 +1020,7 @@ void *read1wTempSensor(void *self)
     char devPath[46];
     int tempVal;
     float params[NR_UNITS] = {0};
-    
+
     /* get device path from Db */
     strcpy(devPath, "/sys/bus/w1/devices/28-XXXXXXXXXXXX/w1_slave");
     strncpy(devPath + 23, SensPtr->AccessedBy, ACCESSED_BY_SIZE - 1);
@@ -979,7 +1056,6 @@ void *read1wTempSensor(void *self)
 void *readRfWatch(void *self)
 {
     const t_s_sensor *SensPtr = (const t_s_sensor *) self;
-    static unsigned char SwitchState;
     t_s_rf_watch_values rfValues;
     char devPath[46];
     int devFd;
@@ -996,18 +1072,18 @@ void *readRfWatch(void *self)
     devFd = open(devPath, O_RDWR);
     if(devFd < 0)
     {
-    	syslog(LOG_ERR, "Unable to open '%s'\n", devPath);
-    	return NULL;
+        syslog(LOG_ERR, "Unable to open '%s'\n", devPath);
+        return NULL;
     }
     if(tcgetattr(devFd, &cf) < 0)
     {
-    	syslog(LOG_ERR, "Unable to get termios details\n");
-    	return NULL;
+        syslog(LOG_ERR, "Unable to get termios details\n");
+        return NULL;
     }
     if(cfsetispeed(&cf, B115200) < 0 || cfsetospeed(&cf, B115200) < 0)
     {
-    	syslog(LOG_ERR, "Unable to set speed\n");
-    	return NULL;
+        syslog(LOG_ERR, "Unable to set speed\n");
+        return NULL;
     }
 
     /* Make it a raw stream and turn off software flow control */
@@ -1015,14 +1091,14 @@ void *readRfWatch(void *self)
     cf.c_iflag &= ~(IXON | IXOFF | IXANY);
     if(tcsetattr(devFd, TCSANOW, &cf) < 0)
     {
-    	syslog(LOG_ERR, "Unable to set termios details\n");
-    	return NULL;
+        syslog(LOG_ERR, "Unable to set termios details\n");
+        return NULL;
     }
 
     if(makeRfLink(devFd) != OK)
     {
-    	syslog(LOG_ERR, "Unable to set up RF LINK\n");
-    	return NULL;
+        syslog(LOG_ERR, "Unable to set up RF LINK\n");
+        return NULL;
     }
 
     /* wait for presses */
@@ -1032,7 +1108,7 @@ void *readRfWatch(void *self)
     while(1)
     {
         char bytesRcvd;
-    	if(getRfWatchValues(devFd, &rfValues) != OK)
+        if(getRfWatchValues(devFd, &rfValues) != OK)
         {/* unsuccessful, try again later */
             syslog(LOG_ERR, "Error reading sensor: %d!\n", SensPtr->DbId);
             sleep(10);
@@ -1040,26 +1116,13 @@ void *readRfWatch(void *self)
         else
         {
 #ifdef DEBUG
-        	if(rfValues.switches)
-        	{
-        		syslog(LOG_INFO, "Read switch: %d", rfValues.switches);
-        	}
-#endif
-        	if ((rfValues.switches & RF_SWITCH_BOTTOM_LEFT_MASK) != 0)
-            {/* bottom right button pressed, flip switch state */
-            	SwitchState = (~SwitchState) & 0x01u;
-            	/* issue cmd to actuators if configured */
-            	if(SensPtr->headAct)
-            	{
-            		params[U_NONE] = (float)SwitchState;
-            		issueActCmd(SensPtr->headAct, params);
-            	}
-            	/* insert into DB */
-            	if(insertSensorValue(SensPtr, SwitchState, U_NONE, (unsigned)time(NULL)) != SQLITE_OK)
-            	{
-            		syslog(LOG_ERR, "SQL error when inserting values for sensor: %d !\n", SensPtr->DbId);
-            	}
+            if(rfValues.switches)
+            {
+                syslog(LOG_INFO, "Read switch: %d", rfValues.switches);
             }
+#endif
+            handleSwitches(SensPtr, rfValues.switches);
+            handleAccData(SensPtr, &rfValues);
         	/* go back to sleep */
         	usleep(SensPtr->SampleTime * 1000u);
         }
@@ -1071,24 +1134,24 @@ void *readDhtSensor(void *self)
 {
     const t_s_sensor *SensPtr = (const t_s_sensor *) self;
     char fName[48];
-	t_s_dht_values DhtValues;
+    t_s_dht_values DhtValues;
     unsigned char Pin;
     unsigned TimeStamp;
     float params[NR_UNITS] = {0};
     struct sched_param param = {0};
-    
+
     /* increase thread prio */
     param.sched_priority = sched_get_priority_max(SCHED_FIFO);
     if(pthread_setschedparam(SensPtr->WorkerThread, SCHED_FIFO, &param) == -1)
     {
-            syslog(LOG_ERR, "Cannot increase Dht reading priority: %d!", errno);
-            perror("sched_setscheduler");
-            return NULL;
+        syslog(LOG_ERR, "Cannot increase Dht reading priority: %d!", errno);
+        perror("sched_setscheduler");
+        return NULL;
     }
 #ifdef DEBUG
     syslog(LOG_INFO, "Increased to priority: %d!", param.sched_priority);
 #endif
-    
+
     /* get gpio pin from Db */
     if(getWPiPin(SensPtr->AccessedBy, &Pin) < 0)
     {
@@ -1096,7 +1159,7 @@ void *readDhtSensor(void *self)
          return NULL;
     }
     /* delay the start a bit */
-    sleep(1); 
+    sleep(1);
     while(1)
     {
         if(getDht22Values(Pin, &DhtValues) != OK)
@@ -1285,7 +1348,7 @@ void *controlHysteresis(void * self)
     param.sched_priority = sched_get_priority_max(SCHED_FIFO);
     if(pthread_setschedparam(ActPtr->WorkerThread, SCHED_FIFO, &param) == -1)
     {
-    	syslog(LOG_ERR, "Cannot increase thread priority: %d!", errno);
+        syslog(LOG_ERR, "Cannot increase thread priority: %d!", errno);
         perror("sched_setscheduler");
         return NULL;
     }
@@ -1296,7 +1359,7 @@ void *controlHysteresis(void * self)
         syslog(LOG_ERR, "Invalid Pin for ActuatorInd: %d \n", ActPtr->DbId);
         return NULL;
     }
-     /* command handling */
+    /* command handling */
     while(1)
     {
      /* wait for cmd */
@@ -1370,3 +1433,66 @@ void *controlHysteresis(void * self)
     }
     return NULL;
 }
+
+void *controlWifiLED(void *self)
+{
+    t_s_actuator *ActPtr = (t_s_actuator *) self;
+    unsigned char Cmd;
+    float Param;
+    UDPCommand cmd;
+    char ONcodes[5] = {0x42, 0x45, 0x47, 0x49, 0x4B};
+    char OFFcodes[5] = {0x41, 0x46, 0x48, 0x4A, 0x4C};
+
+    //TODO: get it from ActPtr->AccessedBy
+    snprintf(cmd.address, 16, "%s", "192.168.0.26");
+    cmd.port = 8899;
+    cmd.zone = 0;
+    /* command handling */
+    while(1)
+    {
+        /* wait for cmd */
+        pthread_mutex_lock(&(ActPtr->cmd_mutex));
+        pthread_cond_wait(&(ActPtr->cmd_cv), &(ActPtr->cmd_mutex));
+        Cmd = ActPtr->extCmd;
+        Param = ActPtr->paramCmd;
+        pthread_mutex_unlock(&(ActPtr->cmd_mutex));
+
+        syslog(LOG_INFO, "Command received for %d with param %f \n", ActPtr->DbId, Param);
+        switch(Cmd)
+        {
+        case CMD_ACTIVATE:
+            /* activate and insert into activation history */
+            cmd.code = ONcodes[cmd.zone];
+            cmd.param = 0;
+            if(sendUDPCmd(&cmd))
+            {
+                if((insertActuatorState(ActPtr, 1, U_NONE)) != SQLITE_OK)
+                {
+                    syslog(LOG_ERR, "SQL error when inserting state for actuator: %d !\n", ActPtr->DbId);
+                }
+            }
+            break;
+        case CMD_DEACTIVATE:
+            /* deactivate and insert into activation history */
+            cmd.code = OFFcodes[cmd.zone];
+            cmd.param = 0;
+            if(sendUDPCmd(&cmd))
+            {
+                if((insertActuatorState(ActPtr, 0, U_NONE)) != SQLITE_OK)
+                {
+                    syslog(LOG_ERR, "SQL error when inserting state for actuator: %d !\n", ActPtr->DbId);
+                }
+            }
+            break;
+        case CMD_CALCULATE:
+            break;
+        case CMD_UPDATE_FNC:
+            break;
+        case CMD_RELEASE:
+        default:
+            break;
+        }
+    }
+    return NULL;
+}
+
