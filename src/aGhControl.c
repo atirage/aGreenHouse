@@ -60,7 +60,7 @@ typedef enum {
     CMD_DEACTIVATE,
     CMD_CALCULATE,
     CMD_DIM,
-    CMD_SET_COLOR,
+    CMD_CHG_COLOR,
     CMD_UPDATE_FNC
 }t_e_ext_cmd;
 
@@ -105,6 +105,18 @@ typedef struct {
     float threshold;
     float hysteresis;
 }t_s_temp_hyst_fct;
+
+typedef struct {
+    unsigned char zone;
+    unsigned char brightness;
+    unsigned char color;
+}t_s_led_ctrl_fct;
+
+typedef struct {
+    bool top_left;
+    bool bottom_left;
+    bool top_right;
+}t_s_switch_states;
 
 typedef void* (*t_s_thread_func)(void*);
 
@@ -541,6 +553,11 @@ static int getAllActuators_CB(void *countRow, int nCol, char **valCol, char **na
         actuators[i].Type = ON_OFF_FDB;
         actuators[i].FdbUnit = U_NONE;
     }
+    else if(strcmp(valCol[3], "SOCKET_CTRL_LED") == 0)
+    {
+        actuators[i].Type = SOCKET_CTRL_LED;
+        actuators[i].FdbUnit = U_NONE;
+    }
     else
     {
         actuators[i].Type = ACT_UNKNOWN;
@@ -738,20 +755,21 @@ static int getAlert_CB(void *Value, int nCol, char **valCol, char **nameCol)
 
 static void handleSwitches(t_s_sensor *sensPtr, unsigned char switches)
 {
-    static unsigned char SwitchStates[3];
+    t_s_switch_states SwitchStatesOld;
+    t_s_switch_states SwitchStates;
     t_s_act_list *actList = NULL;
 
     if ((switches & RF_SWITCH_BOTTOM_LEFT_MASK) != 0)
     {/* bottom left button pressed, flip switch state */
-        SwitchStates[0] = (~SwitchStates[0]) & 0x01u;
+        SwitchStates.bottom_left = ~(SwitchStatesOld.bottom_left);
     }
     else if ((switches & RF_SWITCH_TOP_LEFT_MASK) != 0)
     {/* top left button pressed, flip switch state */
-        SwitchStates[1] = (~SwitchStates[1]) & 0x01u;
+        SwitchStates.top_left = ~(SwitchStatesOld.top_left);
     }
     else if ((switches & RF_SWITCH_TOP_RIGHT_MASK) != 0)
     {/* top right button pressed, flip switch state */
-        SwitchStates[2] = (~SwitchStates[2]) & 0x01u;
+        SwitchStates.top_right = ~(SwitchStatesOld.top_right);
     }
     else
     {}
@@ -764,18 +782,32 @@ static void handleSwitches(t_s_sensor *sensPtr, unsigned char switches)
             switch(actList->ptrAct->Type)
             {
             case ON_OFF_FDB:
-                pthread_mutex_lock(&(actList->ptrAct->cmd_mutex));
-                actList->ptrAct->paramCmd = SwitchStates[0];
-                actList->ptrAct->extCmd = CMD_CALCULATE;
-                pthread_cond_signal(&(actList->ptrAct->cmd_cv));
-                pthread_mutex_unlock(&(actList->ptrAct->cmd_mutex));
+                if(SwitchStates.bottom_left != SwitchStatesOld.bottom_left)
+                {
+                    pthread_mutex_lock(&(actList->ptrAct->cmd_mutex));
+                    actList->ptrAct->paramCmd = SwitchStates.bottom_left;
+                    actList->ptrAct->extCmd = CMD_CALCULATE;
+                    pthread_cond_signal(&(actList->ptrAct->cmd_cv));
+                    pthread_mutex_unlock(&(actList->ptrAct->cmd_mutex));
+                }
                 break;
             case SOCKET_CTRL_LED:
-                pthread_mutex_lock(&(actList->ptrAct->cmd_mutex));
-                actList->ptrAct->paramCmd = SwitchStates[1];
-                actList->ptrAct->extCmd = CMD_CALCULATE;
-                pthread_cond_signal(&(actList->ptrAct->cmd_cv));
-                pthread_mutex_unlock(&(actList->ptrAct->cmd_mutex));
+                if(SwitchStates.top_left != SwitchStatesOld.top_left)
+                {
+                    pthread_mutex_lock(&(actList->ptrAct->cmd_mutex));
+                    actList->ptrAct->paramCmd = SwitchStates.top_left;
+                    actList->ptrAct->extCmd = CMD_DIM;
+                    pthread_cond_signal(&(actList->ptrAct->cmd_cv));
+                    pthread_mutex_unlock(&(actList->ptrAct->cmd_mutex));
+                }
+                if(SwitchStates.top_right != SwitchStatesOld.top_right)
+                {
+                    pthread_mutex_lock(&(actList->ptrAct->cmd_mutex));
+                    actList->ptrAct->paramCmd = SwitchStates.top_right;
+                    actList->ptrAct->extCmd = CMD_CHG_COLOR;
+                    pthread_cond_signal(&(actList->ptrAct->cmd_cv));
+                    pthread_mutex_unlock(&(actList->ptrAct->cmd_mutex));
+                }
                 break;
             default:
                 break;
@@ -790,6 +822,7 @@ static void handleSwitches(t_s_sensor *sensPtr, unsigned char switches)
             syslog(LOG_ERR, "SQL error when inserting values for sensor: %d !\n", sensPtr->DbId);
         }
     }
+    SwitchStatesOld = SwitchStates;
 }
 
 static void handleAccData(t_s_sensor *sensPtr, const t_s_rf_watch_values *rfValues)
@@ -1446,7 +1479,7 @@ void *controlWifiLED(void *self)
     //TODO: get it from ActPtr->AccessedBy
     snprintf(cmd.address, 16, "%s", "192.168.0.26");
     cmd.port = 8899;
-    cmd.zone = 0;
+    cmd.zone = 0; //get it from control func
     /* command handling */
     while(1)
     {
