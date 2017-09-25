@@ -766,21 +766,21 @@ static int getAlert_CB(void *Value, int nCol, char **valCol, char **nameCol)
 
 static void handleSwitches(t_s_sensor *sensPtr, unsigned char switches)
 {
-    static t_s_switch_states SwitchStatesOld;
+    static t_s_switch_states SwitchStatesOld = {FALSE, FALSE, FALSE};
     t_s_switch_states SwitchStates;
     t_s_act_list *actList = NULL;
 
     if ((switches & RF_SWITCH_BOTTOM_LEFT_MASK) != 0)
     {/* bottom left button pressed, flip switch state */
-        SwitchStates.bottom_left = ~(SwitchStatesOld.bottom_left);
+        SwitchStates.bottom_left = !(SwitchStatesOld.bottom_left);
     }
     else if ((switches & RF_SWITCH_TOP_LEFT_MASK) != 0)
     {/* top left button pressed, flip switch state */
-        SwitchStates.top_left = ~(SwitchStatesOld.top_left);
+        SwitchStates.top_left = !(SwitchStatesOld.top_left);
     }
     else if ((switches & RF_SWITCH_TOP_RIGHT_MASK) != 0)
     {/* top right button pressed, flip switch state */
-        SwitchStates.top_right = ~(SwitchStatesOld.top_right);
+        SwitchStates.top_right = !(SwitchStatesOld.top_right);
     }
     else
     {}
@@ -1167,8 +1167,8 @@ void *readRfWatch(void *self)
 #endif
             handleSwitches(SensPtr, rfValues.switches);
             handleAccData(SensPtr, &rfValues);
-        	/* go back to sleep */
-        	usleep(SensPtr->SampleTime * 1000u);
+            /* go back to sleep */
+            usleep(SensPtr->SampleTime * 1000u);
         }
     }
     return NULL;
