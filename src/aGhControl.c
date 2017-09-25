@@ -107,6 +107,7 @@ typedef struct {
 }t_s_temp_hyst_fct;
 
 typedef struct {
+    bool on;
     unsigned char zone;
     unsigned char brightness;
     unsigned char color;
@@ -439,6 +440,9 @@ static int updateActuatorCtrlFnc_CB(void *actPtr, int nCol, char **valCol, char 
         ((t_s_temp_hyst_fct*)(((t_s_actuator *)actPtr)->ctrlFnc))->threshold = atof(valCol[0]);
         ((t_s_temp_hyst_fct*)(((t_s_actuator *)actPtr)->ctrlFnc))->hysteresis = atof(delim + 1);
         break;
+    case SOCKET_CTRL_LED:
+        /* do nothing */
+        break;
     default:
         ((t_s_actuator *)actPtr)->ctrlFnc = NULL;
         break;
@@ -618,6 +622,13 @@ static int getAllActuators_CB(void *countRow, int nCol, char **valCol, char **na
         ((t_s_temp_hyst_fct*)(actuators[i].ctrlFnc))->hysteresis = atof(delim + 1);
         actuators[i].supervisionCycle = 3600u;
         break;
+    case SOCKET_CTRL_LED:
+        if((actuators[i].ctrlFnc = malloc(sizeof(t_s_led_ctrl_fct))) == NULL)
+        {
+            return 1;
+        }
+        actuators[i].supervisionCycle = 0xffffu;
+        break;
     default:
         actuators[i].ctrlFnc = NULL;
         actuators[i].supervisionCycle = 0xffffu;
@@ -755,7 +766,7 @@ static int getAlert_CB(void *Value, int nCol, char **valCol, char **nameCol)
 
 static void handleSwitches(t_s_sensor *sensPtr, unsigned char switches)
 {
-    t_s_switch_states SwitchStatesOld;
+    static t_s_switch_states SwitchStatesOld;
     t_s_switch_states SwitchStates;
     t_s_act_list *actList = NULL;
 
@@ -1472,14 +1483,16 @@ void *controlWifiLED(void *self)
     t_s_actuator *ActPtr = (t_s_actuator *) self;
     unsigned char Cmd;
     float Param;
-    UDPCommand cmd;
+    UDPCommand UDPcmd;
+    bool rslt1, rslt2;
     char ONcodes[5] = {0x42, 0x45, 0x47, 0x49, 0x4B};
     char OFFcodes[5] = {0x41, 0x46, 0x48, 0x4A, 0x4C};
+    char BRIGHTcodes[19] = {0x02, 0x03, 0x04, 0x05, 0x08, 0x09, 0x0A, 0x0B, 0x0D, 0x0E, 0x0F, 0x10, 0x12, 0x13, 0x14, 0x15, 0x17, 0x18, 0x19};
 
     //TODO: get it from ActPtr->AccessedBy
-    snprintf(cmd.address, 16, "%s", "192.168.0.26");
-    cmd.port = 8899;
-    cmd.zone = 0; //get it from control func
+    snprintf(UDPcmd.address, 16, "%s", "192.168.0.26");
+    UDPcmd.port = 8899;
+    UDPcmd.zone = 0;
     /* command handling */
     while(1)
     {
@@ -1495,11 +1508,13 @@ void *controlWifiLED(void *self)
         {
         case CMD_ACTIVATE:
             /* activate and insert into activation history */
-            cmd.code = ONcodes[cmd.zone];
-            cmd.param = 0;
-            if(sendUDPCmd(&cmd))
+            UDPcmd.code = ONcodes[UDPcmd.zone];
+            UDPcmd.param = 0;
+            if(sendUDPCmd(&UDPcmd))
             {
-                if((insertActuatorState(ActPtr, 1, U_NONE)) != SQLITE_OK)
+                ((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->on = TRUE;
+
+                if((insertActuatorState(ActPtr, 100, U_NONE)) != SQLITE_OK)
                 {
                     syslog(LOG_ERR, "SQL error when inserting state for actuator: %d !\n", ActPtr->DbId);
                 }
@@ -1507,9 +1522,32 @@ void *controlWifiLED(void *self)
             break;
         case CMD_DEACTIVATE:
             /* deactivate and insert into activation history */
-            cmd.code = OFFcodes[cmd.zone];
-            cmd.param = 0;
-            if(sendUDPCmd(&cmd))
+            UDPcmd.code = OFFcodes[UDPcmd.zone];
+            UDPcmd.param = 0;
+            if(sendUDPCmd(&UDPcmd))
+            {
+                ((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->on = FALSE;
+
+                if((insertActuatorState(ActPtr, 0, U_NONE)) != SQLITE_OK)
+                {
+                    syslog(LOG_ERR, "SQL error when inserting state for actuator: %d !\n", ActPtr->DbId);
+                }
+            }
+            break;
+        case CMD_DIM:
+            rslt1 = TRUE;
+            ((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->brightness = (((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->brightness + 1) % 19;
+            if(!((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->on)
+            {
+                UDPcmd.code = ONcodes[UDPcmd.zone];
+                UDPcmd.param = 0;
+                rslt1 = sendUDPCmd(&UDPcmd);
+                usleep(100000);
+            }
+            UDPcmd.code = 0x4E;
+            UDPcmd.param = BRIGHTcodes[((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->brightness];
+            rslt2 = sendUDPCmd(&UDPcmd);
+            if(rslt1 && rslt2)
             {
                 if((insertActuatorState(ActPtr, 0, U_NONE)) != SQLITE_OK)
                 {
@@ -1517,9 +1555,7 @@ void *controlWifiLED(void *self)
                 }
             }
             break;
-        case CMD_CALCULATE:
-            break;
-        case CMD_UPDATE_FNC:
+        case CMD_CHG_COLOR:
             break;
         case CMD_RELEASE:
         default:
