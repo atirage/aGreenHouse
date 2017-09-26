@@ -92,6 +92,7 @@ typedef struct {
     char AccessedBy[ACCESSED_BY_SIZE];              /* connection to the raspberry, for ex. file, gpio, etc */
     t_e_sensor_type Type;                           /* type of sensor, defines how the sensor will be handled */
     unsigned int SampleTime;                        /* desired refresh rate of sensor data */
+    void *prvData;                                  /* used to store sensor specific data per instance */
     t_s_act_list *headAct;
 }t_s_sensor;
 
@@ -193,6 +194,7 @@ static void cleanup(void)
     {
         for(i=0; i < nrSens; i++)
         {
+            free(sensors[i].prvData);
             if(sensors[i].headAct)
             {
                 //todo: free list
@@ -459,6 +461,8 @@ static int getAllSensors_CB(void *countRow, int nCol, char **valCol, char **name
         syslog(LOG_INFO, "%s = %s\n", nameCol[j], valCol[j] ? valCol[j] : "NULL");
     }
 
+    sensors[i].prvData = NULL;
+
     /* 0: DbId - cannot be NULL */
     sensors[i].DbId = strtol(valCol[0], NULL, 10);
 
@@ -490,8 +494,16 @@ static int getAllSensors_CB(void *countRow, int nCol, char **valCol, char **name
     }
     else if(strcmp(valCol[3], "RfWatch") == 0)
     {
-    	sensors[i].Type = RF_WATCH;
-	}
+        sensors[i].Type = RF_WATCH;
+        if((sensors[i].prvData = malloc(sizeof(t_s_switch_states))) == NULL)
+        {/* error handling */
+            sensors[i].Type = SENS_UNKNOWN;
+        }
+        else
+        {
+            memset(sensors[i].prvData, 0, sizeof(t_s_switch_states));
+        }
+    }
     else
     {
         sensors[i].Type = SENS_UNKNOWN;
@@ -766,21 +778,21 @@ static int getAlert_CB(void *Value, int nCol, char **valCol, char **nameCol)
 
 static void handleSwitches(t_s_sensor *sensPtr, unsigned char switches)
 {
-    static t_s_switch_states SwitchStatesOld = {FALSE, FALSE, FALSE};
-    t_s_switch_states SwitchStates;
+    t_s_switch_states SwitchStates = {FALSE, FALSE, FALSE};
     t_s_act_list *actList = NULL;
+    t_s_switch_states *SwStPtr = (t_s_switch_states *)(sensPtr->prvData);
 
     if ((switches & RF_SWITCH_BOTTOM_LEFT_MASK) != 0)
     {/* bottom left button pressed, flip switch state */
-        SwitchStates.bottom_left = !(SwitchStatesOld.bottom_left);
+        SwitchStates.bottom_left = !(SwStPtr->bottom_left);
     }
     else if ((switches & RF_SWITCH_TOP_LEFT_MASK) != 0)
     {/* top left button pressed, flip switch state */
-        SwitchStates.top_left = !(SwitchStatesOld.top_left);
+        SwitchStates.top_left = !(SwStPtr->top_left);
     }
     else if ((switches & RF_SWITCH_TOP_RIGHT_MASK) != 0)
     {/* top right button pressed, flip switch state */
-        SwitchStates.top_right = !(SwitchStatesOld.top_right);
+        SwitchStates.top_right = !(SwStPtr->top_right);
     }
     else
     {}
@@ -793,7 +805,7 @@ static void handleSwitches(t_s_sensor *sensPtr, unsigned char switches)
             switch(actList->ptrAct->Type)
             {
             case ON_OFF_FDB:
-                if(SwitchStates.bottom_left != SwitchStatesOld.bottom_left)
+                if(SwitchStates.bottom_left != SwStPtr->bottom_left)
                 {
                     pthread_mutex_lock(&(actList->ptrAct->cmd_mutex));
                     actList->ptrAct->paramCmd = SwitchStates.bottom_left;
@@ -803,7 +815,7 @@ static void handleSwitches(t_s_sensor *sensPtr, unsigned char switches)
                 }
                 break;
             case SOCKET_CTRL_LED:
-                if(SwitchStates.top_left != SwitchStatesOld.top_left)
+                if(SwitchStates.top_left != SwStPtr->top_left)
                 {
                     pthread_mutex_lock(&(actList->ptrAct->cmd_mutex));
                     actList->ptrAct->paramCmd = SwitchStates.top_left;
@@ -811,7 +823,7 @@ static void handleSwitches(t_s_sensor *sensPtr, unsigned char switches)
                     pthread_cond_signal(&(actList->ptrAct->cmd_cv));
                     pthread_mutex_unlock(&(actList->ptrAct->cmd_mutex));
                 }
-                if(SwitchStates.top_right != SwitchStatesOld.top_right)
+                if(SwitchStates.top_right != SwStPtr->top_right)
                 {
                     pthread_mutex_lock(&(actList->ptrAct->cmd_mutex));
                     actList->ptrAct->paramCmd = SwitchStates.top_right;
@@ -833,7 +845,7 @@ static void handleSwitches(t_s_sensor *sensPtr, unsigned char switches)
             syslog(LOG_ERR, "SQL error when inserting values for sensor: %d !\n", sensPtr->DbId);
         }
     }
-    SwitchStatesOld = SwitchStates;
+    *SwStPtr = SwitchStates;
 }
 
 static void handleAccData(t_s_sensor *sensPtr, const t_s_rf_watch_values *rfValues)
