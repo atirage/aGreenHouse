@@ -778,24 +778,23 @@ static int getAlert_CB(void *Value, int nCol, char **valCol, char **nameCol)
 
 static void handleSwitches(t_s_sensor *sensPtr, unsigned char switches)
 {
-    t_s_switch_states SwitchStates = {FALSE, FALSE, FALSE};
+    t_s_switch_states SwitchStates;
     t_s_act_list *actList = NULL;
     t_s_switch_states *SwStPtr = (t_s_switch_states *)(sensPtr->prvData);
 
+    SwitchStates = *SwStPtr;
     if ((switches & RF_SWITCH_BOTTOM_LEFT_MASK) != 0)
     {/* bottom left button pressed, flip switch state */
         SwitchStates.bottom_left = !(SwStPtr->bottom_left);
     }
-    else if ((switches & RF_SWITCH_TOP_LEFT_MASK) != 0)
+    if ((switches & RF_SWITCH_TOP_LEFT_MASK) != 0)
     {/* top left button pressed, flip switch state */
         SwitchStates.top_left = !(SwStPtr->top_left);
     }
-    else if ((switches & RF_SWITCH_TOP_RIGHT_MASK) != 0)
+    if ((switches & RF_SWITCH_TOP_RIGHT_MASK) != 0)
     {/* top right button pressed, flip switch state */
         SwitchStates.top_right = !(SwStPtr->top_right);
     }
-    else
-    {}
     /* issue cmd to actuators if configured */
     actList = sensPtr->headAct;
     if(actList)
@@ -1171,13 +1170,14 @@ void *readRfWatch(void *self)
         }
         else
         {
-#ifdef DEBUG
+
             if(rfValues.switches)
             {
+#ifdef DEBUG
                 syslog(LOG_INFO, "Read switch: %d", rfValues.switches);
-            }
 #endif
-            handleSwitches(SensPtr, rfValues.switches);
+                handleSwitches(SensPtr, rfValues.switches);
+            }
             handleAccData(SensPtr, &rfValues);
             /* go back to sleep */
             usleep(SensPtr->SampleTime * 1000u);
