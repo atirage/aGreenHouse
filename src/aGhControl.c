@@ -108,7 +108,6 @@ typedef struct {
 }t_s_temp_hyst_fct;
 
 typedef struct {
-    bool on;
     unsigned char zone;
     unsigned char brightness;
     unsigned char color;
@@ -639,6 +638,9 @@ static int getAllActuators_CB(void *countRow, int nCol, char **valCol, char **na
         {
             return 1;
         }
+        ((t_s_led_ctrl_fct*)(actuators[i].ctrlFnc))->brightness = 0;
+        ((t_s_led_ctrl_fct*)(actuators[i].ctrlFnc))->zone = 0;
+        ((t_s_led_ctrl_fct*)(actuators[i].ctrlFnc))->color = 0;
         actuators[i].supervisionCycle = 0xffffu;
         break;
     default:
@@ -1492,14 +1494,16 @@ void *controlHysteresis(void * self)
 
 void *controlWifiLED(void *self)
 {
+#define BRIGHTNESS_LEVELS (20)
+
     t_s_actuator *ActPtr = (t_s_actuator *) self;
-    unsigned char Cmd;
+    unsigned char Cmd, tempBrightness;
     float Param;
     UDPCommand UDPcmd;
     bool rslt1, rslt2;
     char ONcodes[5] = {0x42, 0x45, 0x47, 0x49, 0x4B};
     char OFFcodes[5] = {0x41, 0x46, 0x48, 0x4A, 0x4C};
-    char BRIGHTcodes[19] = {0x02, 0x03, 0x04, 0x05, 0x08, 0x09, 0x0A, 0x0B, 0x0D, 0x0E, 0x0F, 0x10, 0x12, 0x13, 0x14, 0x15, 0x17, 0x18, 0x19};
+    char BRIGHTcodes[BRIGHTNESS_LEVELS] = {0x00, 0x02, 0x03, 0x04, 0x05, 0x08, 0x09, 0x0A, 0x0B, 0x0D, 0x0E, 0x0F, 0x10, 0x12, 0x13, 0x14, 0x15, 0x17, 0x18, 0x19};
 
     //TODO: get it from ActPtr->AccessedBy
     snprintf(UDPcmd.address, 16, "%s", "192.168.0.26");
@@ -1524,8 +1528,6 @@ void *controlWifiLED(void *self)
             UDPcmd.param = 0;
             if(sendUDPCmd(&UDPcmd))
             {
-                ((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->on = TRUE;
-
                 if((insertActuatorState(ActPtr, 100, U_NONE)) != SQLITE_OK)
                 {
                     syslog(LOG_ERR, "SQL error when inserting state for actuator: %d !\n", ActPtr->DbId);
@@ -1538,8 +1540,6 @@ void *controlWifiLED(void *self)
             UDPcmd.param = 0;
             if(sendUDPCmd(&UDPcmd))
             {
-                ((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->on = FALSE;
-
                 if((insertActuatorState(ActPtr, 0, U_NONE)) != SQLITE_OK)
                 {
                     syslog(LOG_ERR, "SQL error when inserting state for actuator: %d !\n", ActPtr->DbId);
@@ -1547,24 +1547,42 @@ void *controlWifiLED(void *self)
             }
             break;
         case CMD_DIM:
-            rslt1 = TRUE;
-            ((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->brightness = (((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->brightness + 1) % 19;
-            if(!((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->on)
-            {
+            rslt1 = rslt2 = TRUE;
+            tempBrightness = ((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->brightness;
+            syslog(LOG_INFO, "Current brightness %d \n", BRIGHTcodes[tempBrightness]);
+            if(0x00 == BRIGHTcodes[tempBrightness])
+            {/* needs to be switched on first */
                 UDPcmd.code = ONcodes[UDPcmd.zone];
                 UDPcmd.param = 0;
-                rslt1 = sendUDPCmd(&UDPcmd);
-                usleep(100000);
-            }
-            UDPcmd.code = 0x4E;
-            UDPcmd.param = BRIGHTcodes[((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->brightness];
-            rslt2 = sendUDPCmd(&UDPcmd);
-            if(rslt1 && rslt2)
-            {
-                if((insertActuatorState(ActPtr, 0, U_NONE)) != SQLITE_OK)
+                if(!sendUDPCmd(&UDPcmd))
                 {
-                    syslog(LOG_ERR, "SQL error when inserting state for actuator: %d !\n", ActPtr->DbId);
+                    break;
                 }
+                usleep(50000);
+            }
+            tempBrightness = (tempBrightness + 2) % BRIGHTNESS_LEVELS;
+            if(0x00 == BRIGHTcodes[tempBrightness])
+            {/* needs to be switched off */
+                UDPcmd.code = OFFcodes[UDPcmd.zone];
+                UDPcmd.param = 0;
+                if(!sendUDPCmd(&UDPcmd))
+                {
+                    break;
+                }
+            }
+            else
+            {/* set brightness */
+                UDPcmd.code = 0x4E;
+                UDPcmd.param = BRIGHTcodes[tempBrightness];
+                if(!sendUDPCmd(&UDPcmd))
+                {
+                    break;
+                }
+            }
+            ((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->brightness = tempBrightness;
+            if((insertActuatorState(ActPtr, 0, U_NONE)) != SQLITE_OK)
+            {
+                syslog(LOG_ERR, "SQL error when inserting state for actuator: %d !\n", ActPtr->DbId);
             }
             break;
         case CMD_CHG_COLOR:
