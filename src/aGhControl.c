@@ -26,7 +26,7 @@
 #define ERR_APP_BCM2835 4
 
 #define LOCATION_SIZE 20
-#define ACCESSED_BY_SIZE 13
+#define ACCESSED_BY_SIZE 21
 
 typedef enum {
     _1W_TEMP = 0,
@@ -155,8 +155,8 @@ static unsigned short int getActuatorInd(unsigned short int dbId);
 static void issueActCmd(t_s_act_list *actList, float *paramList);
 static void appendUnit(char *unitString, t_e_unit unit);
 static void checkAlert(unsigned short int dbSensId, float value, t_e_unit unit);
-static void handleSwitches(t_s_sensor *sensPtr, unsigned char switches);
-static void handleAccData(t_s_sensor *sensPtr, const t_s_rf_watch_values *rfValues);
+static void handleSwitches(const t_s_sensor *sensPtr, unsigned char switches);
+static void handleAccData(const t_s_sensor *sensPtr, const t_s_rf_watch_values *rfValues);
 
 /* map sensor type to thread function */
 const t_s_thread_func SensThreadCfg[NR_SENS_TYPE] = {
@@ -778,7 +778,7 @@ static int getAlert_CB(void *Value, int nCol, char **valCol, char **nameCol)
     return 0;
 }
 
-static void handleSwitches(t_s_sensor *sensPtr, unsigned char switches)
+static void handleSwitches(const t_s_sensor *sensPtr, unsigned char switches)
 {
     t_s_switch_states SwitchStates;
     t_s_act_list *actList = NULL;
@@ -849,7 +849,7 @@ static void handleSwitches(t_s_sensor *sensPtr, unsigned char switches)
     *SwStPtr = SwitchStates;
 }
 
-static void handleAccData(t_s_sensor *sensPtr, const t_s_rf_watch_values *rfValues)
+static void handleAccData(const t_s_sensor *sensPtr, const t_s_rf_watch_values *rfValues)
 {
 
 }
@@ -1516,7 +1516,7 @@ void *controlWifiLED(void *self)
     /* Get IP address and port */
     UDPcmd.port = atoi(delim + 1);
     delim[0] = 0;
-    snprintf(UDPcmd.address, 16, "%s", delim);
+    snprintf(UDPcmd.address, 16, "%s", ActPtr->AccessedBy);
     UDPcmd.zone = 0;
     /* command handling */
     while(1)
