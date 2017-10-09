@@ -66,7 +66,7 @@ unsigned int getDht22Values(unsigned char pin, t_s_dht_values *dhtValues)
 {
     unsigned char buffer[5] = {0}, byteInd = 0, bitInd = 0, feCnt = 3, state, laststate;
     unsigned t1, t2, dt;
-    
+
     /* start seq */
     pinMode(pin, OUTPUT);
     digitalWrite(pin, LOW);
@@ -76,9 +76,9 @@ unsigned int getDht22Values(unsigned char pin, t_s_dht_values *dhtValues)
     usleep(700);
 #endif
     digitalWrite(pin, HIGH);
-    
+
     /* read sensor data */
-    pinMode(pin, INPUT); 
+    pinMode(pin, INPUT);
     laststate = digitalRead(pin);
     if(laststate == LOW) feCnt--;
     t1 = (unsigned)micros();
@@ -93,16 +93,16 @@ unsigned int getDht22Values(unsigned char pin, t_s_dht_values *dhtValues)
         if(state == HIGH) continue;
         /* falling edge, process it */
         if(feCnt) feCnt--;
-		if(feCnt)
+        if(feCnt)
         {
             t1 = (unsigned)micros();
             continue;
         }
         t1 = t2;
         if (dt > 120)
-		{
-			buffer[byteInd] |= 0x80u >> bitInd;
-		}
+        {
+            buffer[byteInd] |= 0x80u >> bitInd;
+        }
         bitInd++;
         if(bitInd == 8)
         {
@@ -118,19 +118,29 @@ unsigned int getDht22Values(unsigned char pin, t_s_dht_values *dhtValues)
     if((((unsigned char)(buffer[0] + buffer[1] + buffer[2] + buffer[3]) != buffer[4])) || (buffer[4] == 0))
     {
 #ifdef DEBUG
-    	syslog(LOG_INFO, "DhtXX: %d|%d|%d|%d|%d\n",buffer[0], buffer[1], buffer[2], buffer[3], buffer[4]);
+        syslog(LOG_INFO, "DhtXX: %d|%d|%d|%d|%d\n",buffer[0], buffer[1], buffer[2], buffer[3], buffer[4]);
 #endif
-    	return NOK;
+        return NOK;
     }
 #if (DHT_TYPE == 11)
     dhtValues->humidity = buffer[0];
     dhtValues->temperature = buffer[2];
+    if( (dhtValues->humidity < 20) || (dhtValues->humidity > 90) ||
+        (dhtValues->temperature < 0) || (dhtValues->temperature > 50) )
+    {/* out of range values, probably caused by a 2bit error which the checksum cannot detect */
+        return NOK;
+    }
 #else //if (DHT_TYPE == 22)
     dhtValues->humidity = (buffer[0] * 256 + buffer[1]) / 10.0;
     dhtValues->temperature = ((buffer[2] & 0x7F) * 256 + buffer[3]) / 10.0;
     if(buffer[2] & 0x80)
     {
         dhtValues->temperature *= (-1);
+    }
+    if( (dhtValues->humidity < 0) || (dhtValues->humidity > 100) ||
+        (dhtValues->temperature < -40) || (dhtValues->temperature > 80) )
+    {/* out of range values, probably caused by a 2bit error which the checksum cannot detect */
+        return NOK;
     }
 #endif
     return OK;
@@ -143,7 +153,7 @@ unsigned int getPwmFlow(unsigned char pin, float *flowRate)
     char dummy, fName[64];
     struct pollfd polls;
     int sysFd = -1;
-    
+
     sprintf (fName, "/sys/class/gpio/gpio%d/value", wpiPinToGpio(pin)) ;
     if((sysFd = open (fName, O_RDONLY)) < 0)
     {

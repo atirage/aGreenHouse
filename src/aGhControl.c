@@ -1502,15 +1502,21 @@ void *controlWifiLED(void *self)
     float Param;
     UDPCommand UDPcmd;
     bool rslt1, rslt2;
+    char *delim;
     char WHITEcodes[5] = {0xC2, 0xC5, 0xC7, 0xC9, 0xCB};
     char ONcodes[5] = {0x42, 0x45, 0x47, 0x49, 0x4B};
     char OFFcodes[5] = {0x41, 0x46, 0x48, 0x4A, 0x4C};
     char BRIGHTcodes[BRIGHTNESS_LEVELS] = {0x00, 0x02, 0x03, 0x04, 0x05, 0x08, 0x09, 0x0A, 0x0B, 0x0D, 0x0E, 0x0F, 0x10, 0x12, 0x13, 0x14, 0x15, 0x17, 0x18, 0x19};
     char COLORcodes[COLORS] = {0x00/*white*/, 0xFF/*Red*/, 0xD9/*Lavender*/, 0xBA/*Blue*/, 0x85/*Aqua*/, 0x7A/*Green*/, 0x54/*Lime*/, 0x3B/*Yellow*/, 0x1E/*Orange*/};
 
-    //TODO: get it from ActPtr->AccessedBy
-    snprintf(UDPcmd.address, 16, "%s", "192.168.0.26");
-    UDPcmd.port = 8899;
+    if((delim = strchr(ActPtr->AccessedBy, ':')) == NULL)
+    {
+        return NULL;
+    }
+    /* Get IP address and port */
+    UDPcmd.port = atoi(delim + 1);
+    delim[0] = 0;
+    snprintf(UDPcmd.address, 16, "%s", delim);
     UDPcmd.zone = 0;
     /* command handling */
     while(1)
