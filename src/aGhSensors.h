@@ -26,11 +26,11 @@ typedef struct _tag_dht_values{
 }t_s_dht_values;
 
 typedef struct _tag_rf_watch_values{
-	unsigned char acc_x;
-	unsigned char acc_y;
-	unsigned char acc_z;
-	unsigned char acc_fresh;
-	unsigned char switches;
+    char acc_x;
+    char acc_y;
+    char acc_z;
+    bool acc_fresh;
+    char switches;
 }t_s_rf_watch_values;
 
 extern unsigned int get1wTemperature(char *devicePath, int *tempRawVal);

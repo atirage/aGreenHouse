@@ -851,7 +851,16 @@ static void handleSwitches(const t_s_sensor *sensPtr, unsigned char switches)
 
 static void handleAccData(const t_s_sensor *sensPtr, const t_s_rf_watch_values *rfValues)
 {
+    signed short int x = rfValues->acc_x, y = rfValues->acc_y, z = rfValues->acc_z;
 
+    if(rfValues->acc_x > 127)
+        x = 0xFF00 | x;
+    if(rfValues->acc_y > 127)
+        y = 0xFF00 | y;
+    if(rfValues->acc_z > 127)
+        z = 0xFF00 | z;
+    if(rfValues->acc_fresh)
+        syslog(LOG_INFO, "%d, %d, %d \n", x, y, z);
 }
 
 /*---------- MAIN -------------*/
@@ -1172,7 +1181,6 @@ void *readRfWatch(void *self)
         }
         else
         {
-
             if(rfValues.switches)
             {
 #ifdef DEBUG

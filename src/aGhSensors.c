@@ -6,6 +6,7 @@
 #include <poll.h>
 #include <unistd.h>
 #include <syslog.h>
+#include <stdbool.h>
 
 #include "aGhSensors.h"
 
@@ -177,147 +178,146 @@ unsigned int getPwmFlow(unsigned char pin, float *flowRate)
 
 unsigned int makeRfLink(int devFd)
 {
-	/* See if you can get a response to a hello */
-	unsigned char dont_give_up = 5;
-	static unsigned char hello_str[3] = {0xFF, 0x07, 0x03};
+    /* See if you can get a response to a hello */
+    unsigned char dont_give_up = 5;
+    static unsigned char hello_str[3] = {0xFF, 0x07, 0x03};
 
-	while(dont_give_up)
-	{
-		unsigned char hello_response[3];
-		int i;
+    while(dont_give_up)
+    {
+        unsigned char hello_response[3];
+        int i;
 
-		usleep(250000);
+        usleep(250000);
 
-		if(write(devFd, hello_str, sizeof(hello_str)) != sizeof(hello_str))
-		{
-			return NOK;
-		}
+        if(write(devFd, hello_str, sizeof(hello_str)) != sizeof(hello_str))
+        {
+            return NOK;
+        }
 
-		i = read(devFd, hello_response, sizeof(hello_response));
-		if(i < 0)
-		{
-			return NOK;
-		}
+        i = read(devFd, hello_response, sizeof(hello_response));
+        if(i < 0)
+        {
+            return NOK;
+        }
 
-		if(i != sizeof(hello_response))
-		{
-			dont_give_up--;
-		}
-		else if(hello_response[0] == 0xFF && hello_response[1] == 0x6 && hello_response[2] == 0x3)
-		{
-			break;
-		}
-		else
-		{
-			dont_give_up--;
-		}
-	}
+        if(i != sizeof(hello_response))
+        {
+            dont_give_up--;
+        }
+        else if(hello_response[0] == 0xFF && hello_response[1] == 0x6 && hello_response[2] == 0x3)
+        {
+            break;
+        }
+        else
+        {
+            dont_give_up--;
+        }
+    }
 
-	if(dont_give_up)
-	{
-		return OK;
-	}
-	else
-	{
-		return NOK;
-	}
+    if(dont_give_up)
+    {
+        return OK;
+    }
+    else
+    {
+        return NOK;
+    }
 }
 
 /* function needs to be called cyclically, for one button press the RF watch generates more frames, this needs to be filtered out */
 unsigned int getRfWatchValues(int devFd, t_s_rf_watch_values *rfValues)
 {
-	static const unsigned char data_req[RF_FRAME_SIZE] = {0xFF, 0x08, 0x07, 0x00, 0x00, 0x00, 0x00};
-	unsigned char buffer[RF_FRAME_SIZE];
-	static unsigned char inhibitBtnPress[3] = {0};
+    static const char data_req[RF_FRAME_SIZE] = {0xFF, 0x08, 0x07, 0x00, 0x00, 0x00, 0x00};
+    char buffer[RF_FRAME_SIZE];
+    static unsigned char inhibitBtnPress[3] = {0};
 
-	if(write(devFd, data_req, sizeof(data_req)) != sizeof(data_req))
-	{
-		return NOK;
-	}
+    if(write(devFd, data_req, sizeof(data_req)) != sizeof(data_req))
+    {
+        return NOK;
+    }
 
-	if( (read(devFd, buffer, RF_FRAME_SIZE) != RF_FRAME_SIZE) ||
-	    (buffer[0] != 0xFF || buffer[1] != 0x6 || buffer[2] != 0x7) )
-	{/* invalid response */
+    if( (read(devFd, buffer, RF_FRAME_SIZE) != RF_FRAME_SIZE) ||
+        (buffer[0] != 0xFF || buffer[1] != 0x6 || buffer[2] != 0x7) )
+    {/* invalid response */
 #ifdef DEBUG
-		syslog(LOG_ERR, "Valid data: %d %d %d %d %d %d %d \n", buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6]);
+        syslog(LOG_ERR, "Valid data: %d %d %d %d %d %d %d \n", buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6]);
 #endif
-		return NOK;
-	}
+        return NOK;
+    }
+    /* valid response */
+    rfValues->switches = RF_SWITCH_NONE_MASK;
+    rfValues->acc_fresh = FALSE;
+    if(0xFF == buffer[3])
+    {/* no new data */
+        if(inhibitBtnPress[0])
+        {
+            inhibitBtnPress[0]--;
+        }
+        if(inhibitBtnPress[1])
+        {
+            inhibitBtnPress[1]--;
+        }
+        if(inhibitBtnPress[2])
+        {
+            inhibitBtnPress[2]--;
+        }
+    }
+    else
+    {
+        if(buffer[3] & 0x01)
+        {/* acc data present */
+            rfValues->acc_fresh = TRUE;
+            rfValues->acc_x = buffer[5];
+            rfValues->acc_y = buffer[4];
+            rfValues->acc_z = buffer[6];
+        }
+        switch(buffer[3])
+        {
+        case 0x01:
+            rfValues->switches = RF_SWITCH_NONE_MASK;
+            if(inhibitBtnPress[0])
+            {
+                inhibitBtnPress[0]--;
+            }
+            if(inhibitBtnPress[1])
+            {
+                inhibitBtnPress[1]--;
+            }
+            if(inhibitBtnPress[2])
+            {
+                inhibitBtnPress[2]--;
+            }
+            break;
+        case 0x11:
+        case 0x12:
+            if(inhibitBtnPress[0] == 0)
+            {
+                rfValues->switches |= RF_SWITCH_TOP_LEFT_MASK;
+                inhibitBtnPress[0] = 1;
+            }
+            break;
+        case 0x21:
+        case 0x22:
+            if(inhibitBtnPress[1] == 0)
+            {
+                rfValues->switches |= RF_SWITCH_BOTTOM_LEFT_MASK;
+                inhibitBtnPress[1] = 2;
+            }
+            break;
+        case 0x31:
+        case 0x32:
+            if(inhibitBtnPress[2] == 0)
+            {
+                rfValues->switches |= RF_SWITCH_TOP_RIGHT_MASK;
+                inhibitBtnPress[2] = 5;
+            }
+            break;
+        default:
+            return NOK;
+            break;
+        }
 
-	/* valid response */
-	rfValues->switches = RF_SWITCH_NONE_MASK;
-	rfValues->acc_fresh = FALSE;
-	if(0xFF == buffer[3])
-	{/* no new data */
-		if(inhibitBtnPress[0])
-		{
-			inhibitBtnPress[0]--;
-		}
-		if(inhibitBtnPress[1])
-		{
-			inhibitBtnPress[1]--;
-		}
-		if(inhibitBtnPress[2])
-		{
-			inhibitBtnPress[2]--;
-		}
-	}
-	else
-	{
-		if(buffer[3] & 0x01)
-		{/* acc data present */
-			rfValues->acc_fresh = TRUE;
-			rfValues->acc_x = buffer[5];
-			rfValues->acc_y = buffer[4];
-			rfValues->acc_z = buffer[6];
-		}
-		switch(buffer[3])
-		{
-		case 0x01:
-			rfValues->switches = RF_SWITCH_NONE_MASK;
-			if(inhibitBtnPress[0])
-			{
-				inhibitBtnPress[0]--;
-			}
-			if(inhibitBtnPress[1])
-			{
-				inhibitBtnPress[1]--;
-			}
-			if(inhibitBtnPress[2])
-			{
-				inhibitBtnPress[2]--;
-			}
-			break;
-		case 0x11:
-		case 0x12:
-			if(inhibitBtnPress[0] == 0)
-			{
-				rfValues->switches |= RF_SWITCH_TOP_LEFT_MASK;
-				inhibitBtnPress[0] = 1;
-			}
-			break;
-		case 0x21:
-		case 0x22:
-			if(inhibitBtnPress[1] == 0)
-			{
-				rfValues->switches |= RF_SWITCH_BOTTOM_LEFT_MASK;
-				inhibitBtnPress[1] = 2;
-			}
-			break;
-		case 0x31:
-		case 0x32:
-			if(inhibitBtnPress[2] == 0)
-			{
-				rfValues->switches |= RF_SWITCH_TOP_RIGHT_MASK;
-				inhibitBtnPress[2] = 5;
-			}
-			break;
-		default:
-			return NOK;
-			break;
-		}
-
-	}
-	return OK;
+    }
+    return OK;
 }
 

@@ -2,8 +2,10 @@
 #include <stdbool.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #include "aGhActuators.h"
 
 static void addTimeStamp(unsigned char pin, unsigned short int supervisionCycle);
