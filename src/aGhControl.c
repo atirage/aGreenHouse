@@ -119,6 +119,18 @@ typedef struct {
     bool top_right;
 }t_s_switch_states;
 
+typedef struct {
+    bool active;
+    float x_fltd;
+    float y_fltd;
+    float z_fltd;
+}t_s_fltd_acc;
+
+typedef struct {
+    t_s_switch_states switch_states;
+    t_s_fltd_acc fltd_acc;
+}t_s_rf_watch_data;
+
 typedef void* (*t_s_thread_func)(void*);
 
 /* globals */
@@ -157,6 +169,7 @@ static void appendUnit(char *unitString, t_e_unit unit);
 static void checkAlert(unsigned short int dbSensId, float value, t_e_unit unit);
 static void handleSwitches(const t_s_sensor *sensPtr, unsigned char switches);
 static void handleAccData(const t_s_sensor *sensPtr, const t_s_rf_watch_values *rfValues);
+static float firstOrderFilter(float out_prev, short int in);
 
 /* map sensor type to thread function */
 const t_s_thread_func SensThreadCfg[NR_SENS_TYPE] = {
@@ -494,13 +507,13 @@ static int getAllSensors_CB(void *countRow, int nCol, char **valCol, char **name
     else if(strcmp(valCol[3], "RfWatch") == 0)
     {
         sensors[i].Type = RF_WATCH;
-        if((sensors[i].prvData = malloc(sizeof(t_s_switch_states))) == NULL)
+        if((sensors[i].prvData = malloc(sizeof(t_s_rf_watch_data))) == NULL)
         {/* error handling */
             sensors[i].Type = SENS_UNKNOWN;
         }
         else
         {
-            memset(sensors[i].prvData, 0, sizeof(t_s_switch_states));
+            memset(sensors[i].prvData, 0, sizeof(t_s_rf_watch_data));
         }
     }
     else
@@ -782,7 +795,7 @@ static void handleSwitches(const t_s_sensor *sensPtr, unsigned char switches)
 {
     t_s_switch_states SwitchStates;
     t_s_act_list *actList = NULL;
-    t_s_switch_states *SwStPtr = (t_s_switch_states *)(sensPtr->prvData);
+    t_s_switch_states *SwStPtr = *(((t_s_rf_watch_data *)(sensPtr->prvData))->switch_states);
 
     SwitchStates = *SwStPtr;
     if ((switches & RF_SWITCH_BOTTOM_LEFT_MASK) != 0)
@@ -851,16 +864,35 @@ static void handleSwitches(const t_s_sensor *sensPtr, unsigned char switches)
 
 static void handleAccData(const t_s_sensor *sensPtr, const t_s_rf_watch_values *rfValues)
 {
-    signed short int x = rfValues->acc_x, y = rfValues->acc_y, z = rfValues->acc_z;
+    t_s_fltd_acc *FltdAccPtr = *(((t_s_rf_watch_data *)(sensPtr->prvData))->fltd_acc);
 
-    if(rfValues->acc_x > 127)
-        x = 0xFF00 | x;
-    if(rfValues->acc_y > 127)
-        y = 0xFF00 | y;
-    if(rfValues->acc_z > 127)
-        z = 0xFF00 | z;
     if(rfValues->acc_fresh)
-        syslog(LOG_INFO, "%d, %d, %d \n", x, y, z);
+    {/* new acc data sent */
+        if(!FltdAccPtr->active)
+        {/* reset filter */
+            FltdAccPtr->active = TRUE;
+            FltdAccPtr->x_fltd = (float)rfValues->acc_x;
+            FltdAccPtr->y_fltd = (float)rfValues->acc_y;
+            FltdAccPtr->z_fltd = (float)rfValues->acc_z;
+        }
+        else
+        {/* apply 1st order filter */
+            FltdAccPtr->x_fltd = firstOrderFilter(FltdAccPtr->x_fltd, rfValues->acc_x);
+            FltdAccPtr->y_fltd = firstOrderFilter(FltdAccPtr->y_fltd, rfValues->acc_y);
+            FltdAccPtr->z_fltd = firstOrderFilter(FltdAccPtr->z_fltd, rfValues->acc_z);
+        }
+        syslog(LOG_INFO, "%.2f, .2%f, .2%f \n", FltdAccPtr->x_fltd, FltdAccPtr->y_fltd, FltdAccPtr->z_fltd);
+    }
+    else
+    {/* acc data not sent */
+        FltdAccPtr->active = FLASE;
+    }
+}
+
+static float firstOrderFilter(float out_prev, float in)
+{
+    static const float a = 0.33;
+    return out_prev + a * (in - out_prev);
 }
 
 /*---------- MAIN -------------*/
