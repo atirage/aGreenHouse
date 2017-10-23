@@ -267,9 +267,9 @@ unsigned int getRfWatchValues(int devFd, t_s_rf_watch_values *rfValues)
         if(buffer[3] & 0x01)
         {/* acc data present */
             rfValues->acc_fresh = TRUE;
-            rfValues->acc_x = buffer[5];
-            rfValues->acc_y = buffer[4];
-            rfValues->acc_z = buffer[6];
+            rfValues->acc_x = (signed char)buffer[5];
+            rfValues->acc_y = (signed char)buffer[4];
+            rfValues->acc_z = (signed char)buffer[6];
         }
         switch(buffer[3])
         {

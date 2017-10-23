@@ -865,21 +865,23 @@ static void handleSwitches(const t_s_sensor *sensPtr, unsigned char switches)
 static void handleAccData(const t_s_sensor *sensPtr, const t_s_rf_watch_values *rfValues)
 {
     t_s_fltd_acc *FltdAccPtr = *(((t_s_rf_watch_data *)(sensPtr->prvData))->fltd_acc);
-
+    /*signed short int acc_x, acc_y, acc_z;*/
     if(rfValues->acc_fresh)
     {/* new acc data sent */
+        /* convert to signed integer */
+
         if(!FltdAccPtr->active)
         {/* reset filter */
             FltdAccPtr->active = TRUE;
-            FltdAccPtr->x_fltd = (float)rfValues->acc_x;
-            FltdAccPtr->y_fltd = (float)rfValues->acc_y;
-            FltdAccPtr->z_fltd = (float)rfValues->acc_z;
+            FltdAccPtr->x_fltd = (float)acc_x;
+            FltdAccPtr->y_fltd = (float)acc_y;
+            FltdAccPtr->z_fltd = (float)acc_z;
         }
         else
         {/* apply 1st order filter */
-            FltdAccPtr->x_fltd = firstOrderFilter(FltdAccPtr->x_fltd, rfValues->acc_x);
-            FltdAccPtr->y_fltd = firstOrderFilter(FltdAccPtr->y_fltd, rfValues->acc_y);
-            FltdAccPtr->z_fltd = firstOrderFilter(FltdAccPtr->z_fltd, rfValues->acc_z);
+            FltdAccPtr->x_fltd = firstOrderFilter(FltdAccPtr->x_fltd, acc_x);
+            FltdAccPtr->y_fltd = firstOrderFilter(FltdAccPtr->y_fltd, acc_y);
+            FltdAccPtr->z_fltd = firstOrderFilter(FltdAccPtr->z_fltd, acc_z);
         }
         syslog(LOG_INFO, "%.2f, .2%f, .2%f \n", FltdAccPtr->x_fltd, FltdAccPtr->y_fltd, FltdAccPtr->z_fltd);
     }
