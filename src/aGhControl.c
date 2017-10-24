@@ -64,6 +64,31 @@ typedef enum {
     CMD_UPDATE_FNC
 }t_e_ext_cmd;
 
+typedef enum {
+    ACC_WAIT_4_THR1 = 0,
+    ACC_FIND_LOCAL_MAX,
+    ACC_FIND_LOCAL_MIN,
+    ACC_WAIT_4_THR2
+}t_e_acc_state;
+
+typedef enum {
+    GEST_NONE = 0,
+    GEST_UP,
+    GEST_DOWN,
+    GEST_RIGHT,
+    GEST_LEFT,
+    GEST_IN,
+    GEST_OUT,
+    NUM_GEST
+}t_e_gesture;
+
+typedef enum {
+    AXIS_X = 0,
+    AXIS_Y,
+    AXIS_Z,
+    NUM_AXIS
+}t_e_axis;
+
 typedef struct {
     pthread_t WorkerThread;                        /* activation thread */
     pthread_mutex_t cmd_mutex;
@@ -120,18 +145,26 @@ typedef struct {
 }t_s_switch_states;
 
 typedef struct {
-    bool active;
-    float x_fltd;
-    float y_fltd;
-    float z_fltd;
-}t_s_fltd_acc;
+    float offs;
+    float fltd_val[2]; /*old and new */
+    t_e_acc_state state;
+    t_e_acc_state origin_state;
+    t_e_gesture gesture;
+}t_s_acc_data;
 
 typedef struct {
     t_s_switch_states switch_states;
-    t_s_fltd_acc fltd_acc;
+    t_s_acc_data acc_x;
+    t_s_acc_data acc_y;
+    t_s_acc_data acc_z;
+    bool acc_flt_active;
 }t_s_rf_watch_data;
 
 typedef void* (*t_s_thread_func)(void*);
+
+/* local */
+const float ACC_THR = 20.0;
+const t_e_gesture gestures_LUT[NUM_GEST][NUM_AXIS] = {{GEST_UP, GEST_DOWN}, {GEST_LEFT, GEST_RIGHT}, {GEST_IN, GEST_OUT}};
 
 /* globals */
 sqlite3 *db;
@@ -169,6 +202,7 @@ static void appendUnit(char *unitString, t_e_unit unit);
 static void checkAlert(unsigned short int dbSensId, float value, t_e_unit unit);
 static void handleSwitches(const t_s_sensor *sensPtr, unsigned char switches);
 static void handleAccData(const t_s_sensor *sensPtr, const t_s_rf_watch_values *rfValues);
+static void detectGesture(t_s_acc_data *accPtr, t_e_axis axis);
 static float firstOrderFilter(float out_prev, float in);
 
 /* map sensor type to thread function */
@@ -864,29 +898,104 @@ static void handleSwitches(const t_s_sensor *sensPtr, unsigned char switches)
 
 static void handleAccData(const t_s_sensor *sensPtr, const t_s_rf_watch_values *rfValues)
 {
-    t_s_fltd_acc *FltdAccPtr = &(((t_s_rf_watch_data *)(sensPtr->prvData))->fltd_acc);
-    /*signed short int acc_x, acc_y, acc_z;*/
+    t_s_acc_data *AccX_Ptr = &(((t_s_rf_watch_data *)(sensPtr->prvData))->acc_x);
+    t_s_acc_data *AccY_Ptr = &(((t_s_rf_watch_data *)(sensPtr->prvData))->acc_y);
+    t_s_acc_data *AccZ_Ptr = &(((t_s_rf_watch_data *)(sensPtr->prvData))->acc_z);
     if(rfValues->acc_fresh)
     {/* new acc data sent */
-        if(!FltdAccPtr->active)
+        if(!((t_s_rf_watch_data *)(sensPtr->prvData))->acc_flt_active)
         {/* reset filter */
-            FltdAccPtr->active = TRUE;
-            FltdAccPtr->x_fltd = (float)rfValues->acc_x;
-            FltdAccPtr->y_fltd = (float)rfValues->acc_y;
-            FltdAccPtr->z_fltd = (float)rfValues->acc_z;
+            ((t_s_rf_watch_data *)(sensPtr->prvData))->acc_flt_active = TRUE;
+            AccX_Ptr->fltd_val[0] = AccX_Ptr->offs = (float)rfValues->acc_x;
+            AccY_Ptr->fltd_val[0] = AccY_Ptr->offs = (float)rfValues->acc_y;
+            AccZ_Ptr->fltd_val[0] = AccZ_Ptr->offs = (float)rfValues->acc_z;
             syslog(LOG_INFO, "Filter reset! \n");
         }
         else
         {/* apply 1st order filter */
-            FltdAccPtr->x_fltd = firstOrderFilter(FltdAccPtr->x_fltd, (float)rfValues->acc_x);
-            FltdAccPtr->y_fltd = firstOrderFilter(FltdAccPtr->y_fltd, (float)rfValues->acc_y);
-            FltdAccPtr->z_fltd = firstOrderFilter(FltdAccPtr->z_fltd, (float)rfValues->acc_z);
+            AccX_Ptr->fltd_val[1] = firstOrderFilter(AccX_Ptr->fltd_val[0], (float)rfValues->acc_x);
+            AccY_Ptr->fltd_val[1] = firstOrderFilter(AccY_Ptr->fltd_val[0], (float)rfValues->acc_y);
+            AccZ_Ptr->fltd_val[1] = firstOrderFilter(AccZ_Ptr->fltd_val[0], (float)rfValues->acc_z);
+            detectGesture(AccX_Ptr, AXIS_X);
+            detectGesture(AccY_Ptr, AXIS_Y);
+            detectGesture(AccZ_Ptr, AXIS_Z);
         }
-        syslog(LOG_INFO, "%.2f, %.2f, %.2f \n", FltdAccPtr->x_fltd, FltdAccPtr->y_fltd, FltdAccPtr->z_fltd);
+        syslog(LOG_INFO, "%s, %s, %s \n", (AccX_Ptr->gesture == GEST_LEFT)? "left":"right" ,"none" ,"none" );
+        //syslog(LOG_INFO, "%.2f, %.2f, %.2f \n", FltdAccPtr->x_fltd, FltdAccPtr->y_fltd, FltdAccPtr->z_fltd);
+        AccX_Ptr->fltd_val[0] = AccX_Ptr->fltd_val[1];
+        AccY_Ptr->fltd_val[0] = AccY_Ptr->fltd_val[1];
+        AccZ_Ptr->fltd_val[0] = AccZ_Ptr->fltd_val[1];
     }
     else
     {/* acc data not sent */
-        FltdAccPtr->active = FALSE;
+        ((t_s_rf_watch_data *)(sensPtr->prvData))->acc_flt_active = FALSE;
+    }
+}
+
+static void detectGesture(t_s_acc_data *accPtr, t_e_axis axis)
+{
+    switch(accPtr->state)
+    {
+    case ACC_WAIT_4_THR1:
+        if((accPtr->fltd_val[1] - accPtr->offs) > ACC_THR)
+        {
+            accPtr->state = ACC_FIND_LOCAL_MAX;
+        }
+        else if((accPtr->fltd_val[1] - accPtr->offs) < -ACC_THR)
+        {
+            accPtr->state = ACC_FIND_LOCAL_MIN;
+        }
+        else
+        {/*do nothing*/}
+        accPtr->origin_state = ACC_WAIT_4_THR1;
+        break;
+    case ACC_FIND_LOCAL_MAX:
+        if((accPtr->fltd_val[1] < accPtr->fltd_val[0]) &&
+           ((accPtr->fltd_val[0] - accPtr->offs) > ACC_THR))
+        {/* found */
+            if(ACC_WAIT_4_THR1 == accPtr->origin_state)
+            {
+                accPtr->state = ACC_FIND_LOCAL_MIN;
+            }
+            else
+            {
+                accPtr->state = ACC_WAIT_4_THR2;
+            }
+            accPtr->origin_state = ACC_FIND_LOCAL_MAX;
+        }
+        break;
+    case ACC_FIND_LOCAL_MIN:
+        if((accPtr->fltd_val[1] > accPtr->fltd_val[0]) &&
+           ((accPtr->fltd_val[0] - accPtr->offs) < -ACC_THR))
+        {/* found */
+            if(ACC_WAIT_4_THR1 == accPtr->origin_state)
+            {
+                accPtr->state = ACC_FIND_LOCAL_MAX;
+            }
+            else
+            {
+                accPtr->state = ACC_WAIT_4_THR2;
+            }
+            accPtr->origin_state = ACC_FIND_LOCAL_MIN;
+        }
+        break;
+    case ACC_WAIT_4_THR2:
+        if(((accPtr->fltd_val[1] - accPtr->offs) < ACC_THR) &&
+           ((accPtr->fltd_val[1] - accPtr->offs) > -ACC_THR))
+        {
+            if(ACC_FIND_LOCAL_MIN == accPtr->origin_state)
+            {
+                accPtr->gesture = gestures_LUT[1][axis];
+            }
+            else
+            {
+                accPtr->gesture = gestures_LUT[0][axis];
+            }
+            accPtr->state = ACC_WAIT_4_THR1;
+        }
+        break;
+    default:
+    break;
     }
 }
 
