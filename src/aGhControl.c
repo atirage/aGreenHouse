@@ -12,6 +12,7 @@
 #include <syslog.h>
 #include <unistd.h>
 #include <termios.h>
+#include <math.h>
 
 /* user includes */
 #include "aGhSensors.h"
@@ -164,7 +165,11 @@ typedef void* (*t_s_thread_func)(void*);
 
 /* local */
 const float ACC_THR = 20.0;
-const t_e_gesture gestures_LUT[NUM_GEST][NUM_AXIS] = {{GEST_UP, GEST_DOWN}, {GEST_LEFT, GEST_RIGHT}, {GEST_IN, GEST_OUT}};
+const float STILL_THR = 7.0;
+const float DELTA_THR = 3.0;
+const t_e_gesture gestures_LUT[NUM_AXIS][2] = { {GEST_IN, GEST_OUT},
+                                                {GEST_UP, GEST_DOWN},
+                                                {GEST_LEFT, GEST_RIGHT} };
 
 /* globals */
 sqlite3 *db;
@@ -908,7 +913,8 @@ static void handleAccData(const t_s_sensor *sensPtr, const t_s_rf_watch_values *
             ((t_s_rf_watch_data *)(sensPtr->prvData))->acc_flt_active = TRUE;
             AccX_Ptr->fltd_val[0] = AccX_Ptr->offs = (float)rfValues->acc_x;
             AccY_Ptr->fltd_val[0] = AccY_Ptr->offs = (float)rfValues->acc_y;
-            AccZ_Ptr->fltd_val[0] = AccZ_Ptr->offs = (float)rfValues->acc_z;
+            AccZ_Ptr->fltd_val[0] = (float)rfValues->acc_z;
+            AccZ_Ptr->offs = 28.0;
             syslog(LOG_INFO, "Filter reset! \n");
         }
         else
@@ -920,8 +926,10 @@ static void handleAccData(const t_s_sensor *sensPtr, const t_s_rf_watch_values *
             detectGesture(AccY_Ptr, AXIS_Y);
             detectGesture(AccZ_Ptr, AXIS_Z);
         }
-        syslog(LOG_INFO, "%s, %s, %s \n", (AccX_Ptr->gesture == GEST_LEFT)? "left":"right" ,"none" ,"none" );
-        //syslog(LOG_INFO, "%.2f, %.2f, %.2f \n", FltdAccPtr->x_fltd, FltdAccPtr->y_fltd, FltdAccPtr->z_fltd);
+        if(AccX_Ptr->gesture || AccY_Ptr->gesture || AccZ_Ptr->gesture)
+        {
+            syslog(LOG_INFO, "%d, %d, %d \n", AccX_Ptr->gesture, AccY_Ptr->gesture, AccZ_Ptr->gesture);
+        }
         AccX_Ptr->fltd_val[0] = AccX_Ptr->fltd_val[1];
         AccY_Ptr->fltd_val[0] = AccY_Ptr->fltd_val[1];
         AccZ_Ptr->fltd_val[0] = AccZ_Ptr->fltd_val[1];
@@ -947,6 +955,7 @@ static void detectGesture(t_s_acc_data *accPtr, t_e_axis axis)
         }
         else
         {/*do nothing*/}
+        accPtr->gesture = GEST_NONE;
         accPtr->origin_state = ACC_WAIT_4_THR1;
         break;
     case ACC_FIND_LOCAL_MAX:
@@ -980,23 +989,26 @@ static void detectGesture(t_s_acc_data *accPtr, t_e_axis axis)
         }
         break;
     case ACC_WAIT_4_THR2:
-        if(((accPtr->fltd_val[1] - accPtr->offs) < ACC_THR) &&
-           ((accPtr->fltd_val[1] - accPtr->offs) > -ACC_THR))
+        if(((accPtr->fltd_val[1] - accPtr->offs) < STILL_THR) &&
+           ((accPtr->fltd_val[1] - accPtr->offs) > -STILL_THR) &&
+           (fabsf(accPtr->fltd_val[1] - accPtr->fltd_val[0]) < DELTA_THR))
         {
+            /* TODO: transition and gesture setting might need to be separated based on live testing */
             if(ACC_FIND_LOCAL_MIN == accPtr->origin_state)
             {
-                accPtr->gesture = gestures_LUT[1][axis];
+                accPtr->gesture = gestures_LUT[axis][1];
             }
             else
             {
-                accPtr->gesture = gestures_LUT[0][axis];
+                accPtr->gesture = gestures_LUT[axis][0];
             }
             accPtr->state = ACC_WAIT_4_THR1;
         }
         break;
     default:
-    break;
+        break;
     }
+    //syslog(LOG_INFO, "%d, %d: %5.2f, %5.2f ; %.2f \n",accPtr->state, accPtr->gesture, accPtr->fltd_val[0], accPtr->fltd_val[1], accPtr->offs);
 }
 
 static float firstOrderFilter(float out_prev, float in)
