@@ -15,9 +15,42 @@
 #define RF_FRAME_SIZE (7u)
 #define DHT_TYPE (11)
 
+#define OFFSET_ACC_X (0)
+#define OFFSET_ACC_Y (0)
+#define OFFSET_ACC_Z (0)
+
+/* Conversion values from data to mgrav taken from CMA3000-D0x datasheet (rev 0.4, table 4)*/
+const unsigned short int mgrav_per_bit[7] = { 18, 36, 71, 143, 286, 571, 1142 };
+
 static unsigned dtAbs(unsigned t1, unsigned t2);
+static short int convertToAcc(unsigned char in, signed char offset);
 
 /* ------------------function implementations----------------------------- */
+static short int convertToAcc(unsigned char in, signed char offset)
+{
+    short int sign = 1, result = 0, temp;
+    unsigned char i;
+
+    /* apply offset */
+    temp = (signed char)in - offset;
+    if(temp > 127) in = 0xEF;/*127*/
+    else if(temp < -128) in = 0x80; /*-128*/
+    else in = (temp & 0x00FF);
+
+    if((in & 0x80) != 0)
+    {/* Convert 2's complement negative number to positive number */
+        in = ~in;
+        in += 1;
+        sign = -1;
+    }
+    for (i = 0; i < 7; i++)
+    {
+        result += ((in & (0x01 << i)) >> i) * mgrav_per_bit[i];
+    }
+
+    return (result * sign);
+}
+
 static unsigned dtAbs(unsigned t1, unsigned t2)
 {
     if(t2 >= t1)
@@ -267,9 +300,9 @@ unsigned int getRfWatchValues(int devFd, t_s_rf_watch_values *rfValues)
         if(buffer[3] & 0x01)
         {/* acc data present */
             rfValues->acc_fresh = TRUE;
-            rfValues->acc_x = (signed char)buffer[5];
-            rfValues->acc_y = (signed char)buffer[4];
-            rfValues->acc_z = (signed char)buffer[6];
+            rfValues->acc_x = convertToAcc((unsigned char)buffer[4], OFFSET_ACC_X);
+            rfValues->acc_y = convertToAcc((unsigned char)buffer[5], OFFSET_ACC_Y);
+            rfValues->acc_z = convertToAcc((unsigned char)buffer[6], OFFSET_ACC_Z);
         }
         switch(buffer[3])
         {

@@ -149,7 +149,6 @@ typedef struct {
 }t_s_switch_states;
 
 typedef struct {
-    float offs;
     float fltd_val[2]; /*old and new */
     t_e_acc_state state;
     t_e_acc_state origin_state;
@@ -158,18 +157,18 @@ typedef struct {
 
 typedef struct {
     t_s_switch_states switch_states;
-    t_s_acc_data acc_x;
-    t_s_acc_data acc_y;
-    t_s_acc_data acc_z;
+    t_s_acc_data s_acc_x;
+    t_s_acc_data s_acc_y;
+    t_s_acc_data s_acc_z;
     bool acc_flt_active;
 }t_s_rf_watch_data;
 
 typedef void* (*t_s_thread_func)(void*);
 
 /* local */
-const float ACC_THR = 20.0;
-const float STILL_THR = 7.0;
-const float DELTA_THR = 3.0;
+const float ACC_THR = 0.2;
+const float STILL_THR = 0.08;
+const float DELTA_THR = 0.05;
 const t_e_gesture gestures_LUT[NUM_AXIS][2] = { {GEST_IN, GEST_OUT},
                                                 {GEST_UP, GEST_DOWN},
                                                 {GEST_LEFT, GEST_RIGHT} };
@@ -912,28 +911,33 @@ static void handleSwitches(const t_s_sensor *sensPtr, unsigned char switches)
 
 static void handleAccData(const t_s_sensor *sensPtr, const t_s_rf_watch_values *rfValues)
 {
-    t_s_acc_data *AccX_Ptr = &(((t_s_rf_watch_data *)(sensPtr->prvData))->acc_x);
-    t_s_acc_data *AccY_Ptr = &(((t_s_rf_watch_data *)(sensPtr->prvData))->acc_y);
-    t_s_acc_data *AccZ_Ptr = &(((t_s_rf_watch_data *)(sensPtr->prvData))->acc_z);
+    t_s_acc_data *AccX_Ptr = &(((t_s_rf_watch_data *)(sensPtr->prvData))->s_acc_x);
+    t_s_acc_data *AccY_Ptr = &(((t_s_rf_watch_data *)(sensPtr->prvData))->s_acc_y);
+    t_s_acc_data *AccZ_Ptr = &(((t_s_rf_watch_data *)(sensPtr->prvData))->s_acc_z);
     if(rfValues->acc_fresh)
     {/* new acc data sent */
         if(!((t_s_rf_watch_data *)(sensPtr->prvData))->acc_flt_active)
         {/* reset filter */
             ((t_s_rf_watch_data *)(sensPtr->prvData))->acc_flt_active = TRUE;
-            AccX_Ptr->fltd_val[0] = AccX_Ptr->offs = (float)rfValues->acc_x;
-            AccY_Ptr->fltd_val[0] = AccY_Ptr->offs = (float)rfValues->acc_y;
-            AccZ_Ptr->fltd_val[0] = (float)rfValues->acc_z;
-            AccZ_Ptr->offs = 28.0;
+            AccX_Ptr->fltd_val[0] = (float)rfValues->acc_x / 1000.0;
+            AccY_Ptr->fltd_val[0] = (float)rfValues->acc_y / 1000.0;
+            AccZ_Ptr->fltd_val[0] = (float)rfValues->acc_z / 1000.0;
             syslog(LOG_INFO, "Filter reset! \n");
         }
         else
         {/* apply 1st order filter */
-            AccX_Ptr->fltd_val[1] = firstOrderFilter(AccX_Ptr->fltd_val[0], (float)rfValues->acc_x);
-            AccY_Ptr->fltd_val[1] = firstOrderFilter(AccY_Ptr->fltd_val[0], (float)rfValues->acc_y);
-            AccZ_Ptr->fltd_val[1] = firstOrderFilter(AccZ_Ptr->fltd_val[0], (float)rfValues->acc_z);
-            detectGesture(AccX_Ptr, AXIS_X);
+            AccX_Ptr->fltd_val[1] = firstOrderFilter(AccX_Ptr->fltd_val[0], (float)rfValues->acc_x / 1000.0);
+            AccY_Ptr->fltd_val[1] = firstOrderFilter(AccY_Ptr->fltd_val[0], (float)rfValues->acc_y / 1000.0);
+            AccZ_Ptr->fltd_val[1] = firstOrderFilter(AccZ_Ptr->fltd_val[0], (float)rfValues->acc_z / 1000.0);
+
+            /*detectGesture(AccX_Ptr, AXIS_X);
             detectGesture(AccY_Ptr, AXIS_Y);
-            detectGesture(AccZ_Ptr, AXIS_Z);
+            detectGesture(AccZ_Ptr, AXIS_Z);*/
+            //syslog(LOG_INFO, "%.2f, %.2f, %.2f \n", AccX_Ptr->fltd_val[1], AccY_Ptr->fltd_val[1], AccZ_Ptr->fltd_val[1]);
+            syslog(LOG_INFO, "%.3f \n", AccX_Ptr->fltd_val[1] * AccX_Ptr->fltd_val[1] +
+                                        AccY_Ptr->fltd_val[1] * AccY_Ptr->fltd_val[1] +
+                                        AccZ_Ptr->fltd_val[1] * AccZ_Ptr->fltd_val[1]);
+            //syslog(LOG_INFO, "%.2f, %.2f \n", (float)rfValues->acc_y / 1000.0, AccY_Ptr->fltd_val[1]);
         }
         if(AccX_Ptr->gesture || AccY_Ptr->gesture || AccZ_Ptr->gesture)
         {
@@ -954,11 +958,11 @@ static void detectGesture(t_s_acc_data *accPtr, t_e_axis axis)
     switch(accPtr->state)
     {
     case ACC_WAIT_4_THR1:
-        if((accPtr->fltd_val[1] - accPtr->offs) > ACC_THR)
+        if((accPtr->fltd_val[1]) > ACC_THR)
         {
             accPtr->state = ACC_FIND_LOCAL_MAX;
         }
-        else if((accPtr->fltd_val[1] - accPtr->offs) < -ACC_THR)
+        else if((accPtr->fltd_val[1]) < -ACC_THR)
         {
             accPtr->state = ACC_FIND_LOCAL_MIN;
         }
@@ -969,7 +973,7 @@ static void detectGesture(t_s_acc_data *accPtr, t_e_axis axis)
         break;
     case ACC_FIND_LOCAL_MAX:
         if((accPtr->fltd_val[1] < accPtr->fltd_val[0]) &&
-           ((accPtr->fltd_val[0] - accPtr->offs) > ACC_THR))
+           ((accPtr->fltd_val[0]) > ACC_THR))
         {/* found */
             if(ACC_WAIT_4_THR1 == accPtr->origin_state)
             {
@@ -984,7 +988,7 @@ static void detectGesture(t_s_acc_data *accPtr, t_e_axis axis)
         break;
     case ACC_FIND_LOCAL_MIN:
         if((accPtr->fltd_val[1] > accPtr->fltd_val[0]) &&
-           ((accPtr->fltd_val[0] - accPtr->offs) < -ACC_THR))
+           ((accPtr->fltd_val[0]) < -ACC_THR))
         {/* found */
             if(ACC_WAIT_4_THR1 == accPtr->origin_state)
             {
@@ -998,8 +1002,8 @@ static void detectGesture(t_s_acc_data *accPtr, t_e_axis axis)
         }
         break;
     case ACC_WAIT_4_THR2:
-        if(((accPtr->fltd_val[1] - accPtr->offs) < STILL_THR) &&
-           ((accPtr->fltd_val[1] - accPtr->offs) > -STILL_THR) &&
+        if(((accPtr->fltd_val[1]) < STILL_THR) &&
+           ((accPtr->fltd_val[1]) > -STILL_THR) &&
            (fabsf(accPtr->fltd_val[1] - accPtr->fltd_val[0]) < DELTA_THR))
         {
             /* TODO: transition and gesture setting might need to be separated based on live testing */
@@ -1017,12 +1021,11 @@ static void detectGesture(t_s_acc_data *accPtr, t_e_axis axis)
     default:
         break;
     }
-    //syslog(LOG_INFO, "%d, %d: %5.2f, %5.2f ; %.2f \n",accPtr->state, accPtr->gesture, accPtr->fltd_val[0], accPtr->fltd_val[1], accPtr->offs);
 }
 
 static float firstOrderFilter(float out_prev, float in)
 {
-    static const float a = 0.33;
+    static const float a = 0.3; /* same constant as in OpenChronos */
     return out_prev + a * (in - out_prev);
 }
 
@@ -1037,7 +1040,7 @@ static bool dimWifiLed(unsigned char curr_idx, unsigned char target_brightness, 
         {
             return FALSE;
         }
-        usleep(40000);
+        usleep(60000);
     }
     do
     {
@@ -1737,8 +1740,9 @@ void *controlWifiLED(void *self)
         Cmd = ActPtr->extCmd;
         Param = ActPtr->paramCmd;
         pthread_mutex_unlock(&(ActPtr->cmd_mutex));
-
+#ifdef DEBUG
         syslog(LOG_INFO, "Command received for %d with param %f \n", ActPtr->DbId, Param);
+#endif
         switch(Cmd)
         {
         case CMD_ACTIVATE:

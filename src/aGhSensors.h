@@ -26,9 +26,9 @@ typedef struct _tag_dht_values{
 }t_s_dht_values;
 
 typedef struct _tag_rf_watch_values{
-    signed char acc_x;
-    signed char acc_y;
-    signed char acc_z;
+    signed short int acc_x;
+    signed short int acc_y;
+    signed short int acc_z;
     bool acc_fresh;
     char switches;
 }t_s_rf_watch_values;
