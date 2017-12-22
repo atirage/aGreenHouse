@@ -5,7 +5,7 @@ CFLAGS=-I$(IDIR)
 ODIR=../obj
 LDIR =../lib
 
-LIBS=-l pthread -l dl -l wiringPi -l sqlite3
+LIBS=-l pthread -l dl -l wiringPi -l sqlite3 -lm
 
 _DEPS = aGhSensors.h aGhActuators.h
 DEPS = $(patsubst %,$(IDIR)/%,$(_DEPS))
