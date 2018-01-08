@@ -173,7 +173,7 @@ typedef struct {
 typedef void* (*t_s_thread_func)(void*);
 
 /* local */
-const float ACC_THR = 0.3;
+const float ACC_THR = 0.25;
 const float STILL_THR = 0.08;
 const float DELTA_THR = 0.05;
 
@@ -1046,6 +1046,7 @@ static void detectGesture_v2(t_s_rf_watch_data *accPtr)
     a_sqr_old = accPtr->x_fltd_val[0] * accPtr->x_fltd_val[0] + accPtr->y_fltd_val[0] * accPtr->y_fltd_val[0] + accPtr->z_fltd_val[0] * accPtr->z_fltd_val[0];
     accPtr->a_sqr_sum += a_sqr;
     avg = accPtr->a_sqr_sum / (++accPtr->sample_count);
+
     accPtr->gesture = GEST_NONE;
     switch(accPtr->state)
     {
@@ -1067,8 +1068,11 @@ static void detectGesture_v2(t_s_rf_watch_data *accPtr)
         {/* found */
             float a_sqrt = sqrtf(a_sqr_old);
             ang_x = acosf(accPtr->x_fltd_val[0] / a_sqrt);
+            if(ang_x > M_PI / 2) ang_x = M_PI - ang_x;
             ang_y = acosf(accPtr->y_fltd_val[0] / a_sqrt);
+            if(ang_y > M_PI / 2) ang_y = M_PI - ang_y;
             ang_z = acosf(accPtr->z_fltd_val[0] / a_sqrt);
+            if(ang_z > M_PI / 2) ang_z = M_PI - ang_z;
             FIND_MIN_AXIS(axis, ang_x, ang_y, ang_z);
             accPtr->gesture = gestures_LUT[axis][1];
             accPtr->state = ACC_WAIT_4_BELOW;
@@ -1086,8 +1090,11 @@ static void detectGesture_v2(t_s_rf_watch_data *accPtr)
         {/* found */
             float a_sqrt = sqrtf(a_sqr_old);
             ang_x = acosf(accPtr->x_fltd_val[0] / a_sqrt);
+            if(ang_x > M_PI / 2) ang_x = M_PI - ang_x;
             ang_y = acosf(accPtr->y_fltd_val[0] / a_sqrt);
+            if(ang_y > M_PI / 2) ang_y = M_PI - ang_y;
             ang_z = acosf(accPtr->z_fltd_val[0] / a_sqrt);
+            if(ang_z > M_PI / 2) ang_z = M_PI - ang_z;
             FIND_MIN_AXIS(axis, ang_x, ang_y, ang_z);
             accPtr->gesture = gestures_LUT[axis][0];
             accPtr->state = ACC_WAIT_4_ABOVE;
@@ -1102,8 +1109,12 @@ static void detectGesture_v2(t_s_rf_watch_data *accPtr)
     default:
         break;
     }
-
-    syslog(LOG_INFO, "%.2f, %.2f, %.2f, %.2f, %.2f \n", avg, a_sqr, ang_x, ang_y, ang_z);
+    //syslog(LOG_INFO, "%.2f, %.2f, %.2f, %.2f, %.2f \n", avg, a_sqr, ang_x, ang_y, ang_z);
+    if(accPtr->sample_count > 19)
+    {
+        accPtr->a_sqr_sum = avg;
+        accPtr->sample_count = 1;
+    }
 }
 
 static float firstOrderFilter(float out_prev, float in)
@@ -1485,7 +1496,9 @@ void *readRfWatch(void *self)
 #endif
                 handleSwitches(SensPtr, rfValues.switches);
             }
+#if 0
             handleAccData(SensPtr, &rfValues);
+#endif
             /* go back to sleep */
             usleep(SensPtr->SampleTime * 1000u);
         }
