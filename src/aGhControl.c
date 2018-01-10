@@ -158,8 +158,8 @@ typedef struct {
     bool top_right;
 }t_s_switch_states;
 
+#ifdef GESTURE_DETECTION
 typedef struct {
-    t_s_switch_states switch_states;
     t_e_acc_state state;
     t_e_gesture gesture;
     bool acc_flt_active;
@@ -169,6 +169,7 @@ typedef struct {
     float a_sqr_sum;
     unsigned int sample_count;
 }t_s_rf_watch_data;
+#endif
 
 typedef void* (*t_s_thread_func)(void*);
 
@@ -221,12 +222,13 @@ static void issueActCmd(t_s_act_list *actList, float *paramList);
 static void appendUnit(char *unitString, t_e_unit unit);
 static void checkAlert(unsigned short int dbSensId, float value, t_e_unit unit);
 static void handleSwitches(const t_s_sensor *sensPtr, unsigned char switches);
-static void handleAccData(const t_s_sensor *sensPtr, const t_s_rf_watch_values *rfValues);
-static void detectGesture_v2(t_s_rf_watch_data *accPtr);
-static float firstOrderFilter(float out_prev, float in);
 static bool dimWifiLed(unsigned char curr_idx, unsigned char target_brightness, short int direction, UDPCommand *p_udp_cmd);
-#ifdef GESTURE_V1
+
+#ifdef GESTURE_DETECTION
+static float firstOrderFilter(float out_prev, float in);
+static void handleAccData(const t_s_sensor *sensPtr, const t_s_rf_watch_values *rfValues);
 static void detectGesture(t_s_acc_data *accPtr, t_e_axis axis);
+static void detectGesture_v2(t_s_rf_watch_data *accPtr);
 #endif
 
 /* map sensor type to thread function */
@@ -565,14 +567,6 @@ static int getAllSensors_CB(void *countRow, int nCol, char **valCol, char **name
     else if(strcmp(valCol[3], "RfWatch") == 0)
     {
         sensors[i].Type = RF_WATCH;
-        if((sensors[i].prvData = malloc(sizeof(t_s_rf_watch_data))) == NULL)
-        {/* error handling */
-            sensors[i].Type = SENS_UNKNOWN;
-        }
-        else
-        {
-            memset(sensors[i].prvData, 0, sizeof(t_s_rf_watch_data));
-        }
     }
     else
     {
@@ -849,11 +843,10 @@ static int getAlert_CB(void *Value, int nCol, char **valCol, char **nameCol)
     return 0;
 }
 
-static void handleSwitches(const t_s_sensor *sensPtr, unsigned char switches)
+static void handleSwitches(const t_s_sensor *sensPtr, t_s_switch_states *SwStPtr, unsigned char switches)
 {
     t_s_switch_states SwitchStates;
     t_s_act_list *actList = NULL;
-    t_s_switch_states *SwStPtr = &(((t_s_rf_watch_data *)(sensPtr->prvData))->switch_states);
 
     SwitchStates = *SwStPtr;
     if ((switches & RF_SWITCH_BOTTOM_LEFT_MASK) != 0)
@@ -920,6 +913,7 @@ static void handleSwitches(const t_s_sensor *sensPtr, unsigned char switches)
     *SwStPtr = SwitchStates;
 }
 
+#ifdef GESTURE_DETECTION
 static void handleAccData(const t_s_sensor *sensPtr, const t_s_rf_watch_values *rfValues)
 {
     t_s_rf_watch_data *Acc_Ptr = ((t_s_rf_watch_data *)(sensPtr->prvData));
@@ -942,16 +936,11 @@ static void handleAccData(const t_s_sensor *sensPtr, const t_s_rf_watch_values *
             Acc_Ptr->y_fltd_val[1] = firstOrderFilter(Acc_Ptr->y_fltd_val[0], (float)rfValues->acc_y / 1000.0);
             Acc_Ptr->z_fltd_val[1] = firstOrderFilter(Acc_Ptr->z_fltd_val[0], (float)rfValues->acc_z / 1000.0);
 
-            detectGesture_v2(Acc_Ptr);
-#ifdef GESTURE_V1
+            //detectGesture_v2(Acc_Ptr);
             detectGesture(AccX_Ptr, AXIS_X);
             detectGesture(AccY_Ptr, AXIS_Y);
             detectGesture(AccZ_Ptr, AXIS_Z);
-#endif
             //syslog(LOG_INFO, "%.2f, %.2f, %.2f \n", AccX_Ptr->fltd_val[1], AccY_Ptr->fltd_val[1], AccZ_Ptr->fltd_val[1]);
-            /*syslog(LOG_INFO, "%.3f \n", Acc_Ptr->fltd_val[1] * Acc_Ptr->fltd_val[1] +
-                                        Acc_Ptr->fltd_val[1] * Acc_Ptr->fltd_val[1] +
-                                        Acc_Ptr->fltd_val[1] * Acc_Ptr->fltd_val[1]);*/
         }
         if(Acc_Ptr->gesture)
         {
@@ -966,7 +955,7 @@ static void handleAccData(const t_s_sensor *sensPtr, const t_s_rf_watch_values *
         Acc_Ptr->acc_flt_active = FALSE;
     }
 }
-#ifdef GESTURE_V1
+
 static void detectGesture(t_s_acc_data *accPtr, t_e_axis axis)
 {
     switch(accPtr->state)
@@ -1036,7 +1025,6 @@ static void detectGesture(t_s_acc_data *accPtr, t_e_axis axis)
         break;
     }
 }
-#endif
 
 static void detectGesture_v2(t_s_rf_watch_data *accPtr)
 {
@@ -1122,6 +1110,7 @@ static float firstOrderFilter(float out_prev, float in)
     static const float a = 0.3; /* same constant as in OpenChronos */
     return out_prev + a * (in - out_prev);
 }
+#endif
 
 static bool dimWifiLed(unsigned char curr_idx, unsigned char target_brightness, short int direction, UDPCommand *p_udp_cmd)
 {
@@ -1430,6 +1419,7 @@ void *read1wTempSensor(void *self)
 void *readRfWatch(void *self)
 {
     const t_s_sensor *SensPtr = (const t_s_sensor *) self;
+    t_s_switch_states switchStates = {FALSE, FALSE, FALSE};
     t_s_rf_watch_values rfValues;
     char devPath[46];
     int devFd;
@@ -1494,9 +1484,9 @@ void *readRfWatch(void *self)
 #ifdef DEBUG
                 syslog(LOG_INFO, "Read switch: %d", rfValues.switches);
 #endif
-                handleSwitches(SensPtr, rfValues.switches);
+                handleSwitches(SensPtr, &switchStates, rfValues.switches);
             }
-#if 0
+#ifdef GESTURE_DETECTION
             handleAccData(SensPtr, &rfValues);
 #endif
             /* go back to sleep */
@@ -1813,6 +1803,7 @@ void *controlHysteresis(void * self)
 void *controlWifiLED(void *self)
 {
     t_s_actuator *ActPtr = (t_s_actuator *) self;
+    bool LEDstate = FALSE, PBstarted = FALSE;
     unsigned char Cmd, tempBrightness, tempBrightness_next;
     float Param;
     UDPCommand UDPcmd;
@@ -1839,52 +1830,8 @@ void *controlWifiLED(void *self)
 #ifdef DEBUG
         syslog(LOG_INFO, "Command received for %d with param %f \n", ActPtr->DbId, Param);
 #endif
-        switch(Cmd)
+        if(CMD_CHG_COLOR == Cmd)
         {
-        case CMD_ACTIVATE:
-            tempBrightness = ((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->brightness;
-            if(BRIGHTcodes[tempBrightness] >= BRIGHTcodes[11])
-                break;
-            /* activate and insert into activation history */
-            if(dimWifiLed(tempBrightness, BRIGHTcodes[11], 1, &UDPcmd))
-            {
-                ((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->brightness = 11;
-                if((insertActuatorState(ActPtr, 100, U_NONE)) != SQLITE_OK)
-                {
-                    syslog(LOG_ERR, "SQL error when inserting state for actuator: %d !\n", ActPtr->DbId);
-                }
-            }
-            break;
-        case CMD_DEACTIVATE:
-            tempBrightness = ((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->brightness;
-            if(BRIGHTcodes[tempBrightness] == 0)
-                break;
-            /* dim out and insert into activation history */
-            if(dimWifiLed(tempBrightness, 0, -1, &UDPcmd))
-            {
-                ((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->brightness = 0;
-                if((insertActuatorState(ActPtr, 0, U_NONE)) != SQLITE_OK)
-                {
-                    syslog(LOG_ERR, "SQL error when inserting state for actuator: %d !\n", ActPtr->DbId);
-                }
-            }
-            break;
-        case CMD_DIM:
-            tempBrightness = ((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->brightness;
-            tempBrightness_next = (tempBrightness + 2) % BRIGHTNESS_LEVELS;
-            syslog(LOG_INFO, "Current brightness %d \n", BRIGHTcodes[tempBrightness]);
-            if(tempBrightness_next < tempBrightness)
-            {/* needs to be switched off */
-                dimWifiLed(tempBrightness, 0, -1, &UDPcmd);
-                ((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->brightness = 0;
-            }
-            else
-            {
-                dimWifiLed(tempBrightness, BRIGHTcodes[tempBrightness_next], 2, &UDPcmd);
-                ((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->brightness = tempBrightness_next;
-            }
-            break;
-        case CMD_CHG_COLOR:
             syslog(LOG_INFO, "Current color %d \n", COLORcodes[((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->color]);
             if(!COLORcodes[((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->color])
             {/* send white cmd */
@@ -1898,10 +1845,64 @@ void *controlWifiLED(void *self)
             }
             ((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->color = (((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->color + 1) % COLORS;
             sendUDPCmd(&UDPcmd);
-            break;
-        case CMD_RELEASE:
-        default:
-            break;
+            continue;
+        }
+        /*execute statemachine */
+        tempBrightness = ((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->brightness;
+        tempBrightness_next = BRIGHTNESS_LEVELS;
+        if(!LEDstate)
+        {/* OFF */
+            switch(Cmd)
+            {
+                case CMD_ACTIVATE:
+                    tempBrightness_next = 11;
+                    break;
+                case CMD_DIM:
+                    tempBrightness = 2;
+                    break;
+                default:
+                    break;
+            }
+            if(tempBrightness_next < BRIGHTNESS_LEVELS)
+            {/* valid */
+                dimWifiLed(tempBrightness, tempBrightness_next, 1, &UDPcmd);
+                LEDstate = TRUE;
+                ((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->brightness = tempBrightness_next;
+            }
+        }
+        else
+        {/* ON */
+            switch(Cmd)
+            {
+            case CMD_DEACTIVATE:
+                tempBrightness_next = 0;
+                break;
+            case CMD_DIM:
+                tempBrightness_next = (tempBrightness + 2) % BRIGHTNESS_LEVELS;
+                break;
+            default:
+                break;
+            }
+            if(tempBrightness_next < BRIGHTNESS_LEVELS)
+            {/* valid */
+                syslog(LOG_INFO, "Current brightness %d \n", BRIGHTcodes[tempBrightness]);
+                if(tempBrightness_next < tempBrightness)
+                {/* needs to be switched off */
+                    dimWifiLed(tempBrightness, 0, -1, &UDPcmd);
+                    LEDstate = FALSE;
+                    ((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->brightness = 0;
+                }
+                else
+                {
+                    dimWifiLed(tempBrightness, BRIGHTcodes[tempBrightness_next], 2, &UDPcmd);
+                    LEDstate = TRUE;
+                    ((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->brightness = tempBrightness_next;
+                }
+            }
+        }
+        if((insertActuatorState(ActPtr, LEDstate, U_NONE)) != SQLITE_OK)
+        {
+            syslog(LOG_ERR, "SQL error when inserting state for actuator: %d !\n", ActPtr->DbId);
         }
     }
     return NULL;
