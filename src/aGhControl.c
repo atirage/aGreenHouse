@@ -74,7 +74,9 @@ typedef enum {
     CMD_CALCULATE,
     CMD_DIM,
     CMD_CHG_COLOR,
-    CMD_UPDATE_FNC
+    CMD_UPDATE_FNC,
+    CMD_KDI_ACTIVATE,
+    CMD_KDI_DEACTIVATE
 }t_e_ext_cmd;
 
 typedef enum {
@@ -1855,10 +1857,20 @@ void *controlWifiLED(void *self)
             switch(Cmd)
             {
                 case CMD_ACTIVATE:
-                    tempBrightness_next = 11;
+                    if(PBstarted == FALSE)
+                    {
+                        tempBrightness_next = 11;
+                    }
                     break;
                 case CMD_DIM:
                     tempBrightness = 2;
+                    break;
+                case CMD_KDI_ACTIVATE:
+                    if(PBstarted != FALSE)
+                    {
+                        tempBrightness_next = 11;
+                        PBstarted = FALSE;
+                    }
                     break;
                 default:
                     break;
@@ -1879,6 +1891,10 @@ void *controlWifiLED(void *self)
                 break;
             case CMD_DIM:
                 tempBrightness_next = (tempBrightness + 2) % BRIGHTNESS_LEVELS;
+                break;
+            case CMD_KDI_DEACTIVATE:
+                tempBrightness_next = 0;
+                PBstarted = TRUE;
                 break;
             default:
                 break;

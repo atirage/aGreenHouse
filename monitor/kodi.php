@@ -85,11 +85,13 @@ if(isset($_POST['Cmd']))
         <link rel="stylesheet" href="//code.jquery.com/ui/1.10.4/themes/smoothness/jquery-ui.css">
     </head>
     <body>
-		<form action="kodi.php" method="POST">
-			<input type="radio" name="Cmd" value="1">Dim In <br>
-                        <input type="radio" name="Cmd" value="2" checked>Dim Out <br>
-			<input type="submit" value="Execute"> 
-		</form>
-		<br><font color="red"><?php echo $errmsg; ?></font>
+        <form action="kodi.php" method="POST">
+            <input type="radio" name="Cmd" value="1">Dim In <br>
+            <input type="radio" name="Cmd" value="2" checked>Dim Out <br>
+            <input hidden type="radio" name="Cmd" value="7"> <br>
+            <input hidden type="radio" name="Cmd" value="8"> <br>
+            <input type="submit" value="Execute"> 
+        </form>
+        <br><font color="red"><?php echo $errmsg; ?></font>
     </body>
 </html>
