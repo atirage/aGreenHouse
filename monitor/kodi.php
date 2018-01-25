@@ -8,21 +8,26 @@ $Act_Id = "";
 
 if(isset($_POST['Cmd']))
 {/* submit */
-	//get actuator id
-	$sql = "SELECT Ind FROM Actuators WHERE Type = 'SOCKET_CTRL_LED'";
-	do{
-		$result = $sqlObj->query($sql);
-		if($result instanceof Sqlite3Result)
-		{
-			while($res = $result->fetchArray(SQLITE3_ASSOC))
-			{
-				$Act_Id = $res;
-				break;
-			}
-			break;
-		}
-		sleep(1);
-	}while(1);
+    if( (($_POST['Cmd'] == '7') || ($_POST['Cmd'] == '8')) &&
+        (($_POST['MediaType'] != 'movie') && ($_POST['MediaType'] != 'episode')) )
+    {/* nothing to do */
+        goto end:
+    }
+    //get actuator id
+    $sql = "SELECT Ind FROM Actuators WHERE Type = 'SOCKET_CTRL_LED'";
+    do{
+        $result = $sqlObj->query($sql);
+        if($result instanceof Sqlite3Result)
+        {
+            while($res = $result->fetchArray(SQLITE3_ASSOC))
+            {
+                $Act_Id = $res;
+                break;
+            }
+        break;
+        }
+        sleep(1);
+    }while(1);
 
     //write to FIFO, wait for Feedback
     exec("pgrep aGreenHouse", $output, $return);
@@ -68,11 +73,12 @@ if(isset($_POST['Cmd']))
                 }
             }
         }
-	}
+    }
     else
     {//backend not running
         $errmsg = "Actuator controlling server not running!";
     }
+end: $errmsg = ""
 }
 ?>
 
@@ -90,6 +96,7 @@ if(isset($_POST['Cmd']))
             <input type="radio" name="Cmd" value="2" checked>Dim Out <br>
             <input hidden type="radio" name="Cmd" value="7"> <br>
             <input hidden type="radio" name="Cmd" value="8"> <br>
+            <input hidden type="text" name="MediaType"> <br>
             <input type="submit" value="Execute"> 
         </form>
         <br><font color="red"><?php echo $errmsg; ?></font>

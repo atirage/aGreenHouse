@@ -269,9 +269,11 @@ static void cleanup(void)
         for(i=0; i < nrSens; i++)
         {
             free(sensors[i].prvData);
-            if(sensors[i].headAct)
+            while(sensors[i].headAct != NULL)
             {
-                //todo: free list
+                t_s_act_list to_free = sensors[i].headAct;
+                sensors[i].headAct = to_free->nextAct;
+                free(to_free);
             }
         }
         free(sensors);
@@ -717,10 +719,17 @@ static int getAllActuators_CB(void *countRow, int nCol, char **valCol, char **na
     }
 
     /* 5: log actuation */
-    actuators[i].log_actuation = FALSE;
-    if(0)/* to be handled */
+    switch(actuators[i].Type)
     {
+    case ON_OFF_TIME:/* 1010..1010|1800 */
         actuators[i].log_actuation = TRUE;
+        break;
+    case ON_OFF_FDB:/* 23.5|1.5 */
+    case SOCKET_CTRL_LED:
+    case SOCKET_CTRL_KODI:
+    default:
+        actuators[i].log_actuation = FALSE;
+        break;
     }
 
     /* 6: SensInd - can be NULL*/
@@ -764,7 +773,12 @@ static int insertSensorValue(const t_s_sensor *self, float Value, t_e_unit Unit,
 {
     char queryString[120];
     char *zErrMsg = 0;
-    int rc;
+    int rc = SQLITE_OK;
+
+    if(U_NONE == Unit)
+    {
+        return rc;
+    }
     /* prepare query string */
     strcpy(queryString, "insert into Measurements (SensorInd, Value, Unit, Timestamp) VALUES ('");
     snprintf(queryString + strlen(queryString), 4, "%d", self->DbId);
@@ -904,13 +918,6 @@ static void handleSwitches(const t_s_sensor *sensPtr, t_s_switch_states *SwStPtr
             }
             actList = actList->nextAct;
         }while(actList);
-    }
-    if(0)//(switches)
-    {/* insert into DB */
-        if(insertSensorValue(sensPtr, switches, U_NONE, (unsigned)time(NULL)) != SQLITE_OK)
-        {
-            syslog(LOG_ERR, "SQL error when inserting values for sensor: %d !\n", sensPtr->DbId);
-        }
     }
     *SwStPtr = SwitchStates;
 }
