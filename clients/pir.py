@@ -59,12 +59,8 @@ draw = ImageDraw.Draw(image)
 # Draw a black filled box to clear the image.
 #draw.rectangle((0,0,width,height), outline=0, fill=0)
 
-# Load default font.
-font = ImageFont.load_default()
-
-# Alternatively load a TTF font.
-# Some other nice fonts to try: http://www.dafont.com/bitmap.php
-#font = ImageFont.truetype('Minecraftia.ttf', 8)
+# Load font.
+font = ImageFont.truetype('/home/pi/.fonts/OpenSans-Regular.ttf', size=28)
 
 # set up PIR -------------------------------
 pir = MotionSensor(21)
@@ -72,6 +68,10 @@ timer = 255
 slow_timer = 0 
 motion_prev = False;
 amb_temp = "--"
+rh= "--"
+
+#for i in range(128,255):
+#    print(str(i) + '=' +chr(i))
 
 while (True):
     # handle PiOLED------------------------
@@ -86,16 +86,24 @@ while (True):
         rv = 404 #dummy
     if rv == 200:
         #find ambient temperature
-        for line in r.headers:
+        lines = (r.content).split('\n')
+        for line in lines:
             i = line.find("\u00BAC")
             if i != -1:
-                substr = line[i-12:i-1]
+                substr = line[i-13:i-1]
                 if substr.find("Living"):
                     #found
-                    amb_temp = line[i-3:i-1]
+                    amb_temp = line[i-3:i-1]+"\xB0C"
+            i = line.find("%")
+            if i != -1:
+                substr = line[i-13:i-1]
+                if substr.find("Living"):
+                    #found
+                    rh = line[i-3:i-1]+"%"
     # Write two lines of text.
-    draw.text((x, top), amb_temp,  font=font, fill=255)
-    image.rotate(90)
+    #draw.text((x, top), amb_temp,  font=font, fill=255)
+    draw.text((0, 0), amb_temp + ' ' + rh, font=font, fill=255)
+    #image.rotate(90)
     
     # Display image.
     disp.image(image)
@@ -115,6 +123,7 @@ while (True):
     if 0 < timer < 255:
       timer -= 1
       if timer == 0:
+          print("No motion timeout!")
           p = requests.post(url + "kodi.php", auth=("atirage", "januar14"), data = {"Cmd":"2"})
           #subprocess.call(["wget", "-q", "-T =3", "-O/dev/null", "--user=atirage", "--password=januar14", "--post-data=Cmd=2", url + "kodi.php"])
     motion_prev = motion

@@ -223,7 +223,7 @@ static unsigned short int getActuatorInd(unsigned short int dbId);
 static void issueActCmd(t_s_act_list *actList, float *paramList);
 static void appendUnit(char *unitString, t_e_unit unit);
 static void checkAlert(unsigned short int dbSensId, float value, t_e_unit unit);
-static void handleSwitches(const t_s_sensor *sensPtr, unsigned char switches);
+static void handleSwitches(const t_s_sensor *sensPtr, t_s_switch_states *SwStPtr, unsigned char switches);
 static bool dimWifiLed(unsigned char curr_idx, unsigned char target_brightness, short int direction, UDPCommand *p_udp_cmd);
 
 #ifdef GESTURE_DETECTION
@@ -271,7 +271,7 @@ static void cleanup(void)
             free(sensors[i].prvData);
             while(sensors[i].headAct != NULL)
             {
-                t_s_act_list to_free = sensors[i].headAct;
+                t_s_act_list *to_free = sensors[i].headAct;
                 sensors[i].headAct = to_free->nextAct;
                 free(to_free);
             }
@@ -1125,7 +1125,7 @@ static bool dimWifiLed(unsigned char curr_idx, unsigned char target_brightness, 
 {
     bool stop = FALSE;
     if(0x00 == BRIGHTcodes[curr_idx])
-    {
+    {/* needs to be switched on */
         p_udp_cmd->code = ONcodes[p_udp_cmd->zone];
         p_udp_cmd->param = 0;
         if(!sendUDPCmd(p_udp_cmd))
@@ -1264,7 +1264,7 @@ int main(void)
         {
             pthread_mutex_init(&(actuators[i].cmd_mutex), NULL);
             pthread_cond_init(&(actuators[i].cmd_cv), NULL);
-			if(pthread_create(&(actuators[i].WorkerThread), NULL, ActThreadCfg[actuators[i].Type], (void*) (actuators + i)))
+            if(pthread_create(&(actuators[i].WorkerThread), NULL, ActThreadCfg[actuators[i].Type], (void*) (actuators + i)))
             {
                 rc = TRUE;
             }
@@ -1304,11 +1304,23 @@ int main(void)
     umask(0);
     mknod("/var/lib/aGreenHouse/cmdFIFO", S_IFIFO|0666, 0);//EEXIST
     mknod("/var/lib/aGreenHouse/respFIFO", S_IFIFO|0666, 0);//EEXIST
-    cmd_fd = open("/var/lib/aGreenHouse/cmdFIFO", O_RDONLY);//check for error
-    resp_fd = open("/var/lib/aGreenHouse/respFIFO", O_WRONLY);//check for error
+    cmd_fd = open("/var/lib/aGreenHouse/cmdFIFO", O_RDONLY);
+    if(cmd_fd < 0)
+    {
+        syslog(LOG_ERR, "Error opening command FIFO! \n");
+    }
+    resp_fd = open("/var/lib/aGreenHouse/respFIFO", O_WRONLY);
+    if(resp_fd < 0)
+    {
+        syslog(LOG_ERR, "Error opening response FIFO! \n");
+    }
     i = 0;
     while(1)
     {
+        if((cmd_fd < 0) || (resp_fd < 0))
+        {
+            continue;
+        }
         if(!(read(cmd_fd, &c, 1) > 0))
         {
             continue;
@@ -1354,7 +1366,10 @@ int main(void)
                 }
                 phase = 0;
                 param = 0;
-                write(resp_fd, "OK", 2);
+                if(write(resp_fd, "OK", 2) < 0)
+                {
+                    syslog(LOG_ERR, "Error writing to response FIFO! \n");
+                }
             }
         }
         else
@@ -1362,6 +1377,8 @@ int main(void)
             str[i++]=c;
         }
     }
+    close(cmd_fd);
+    close(resp_fd);
     /* wait for threads to finish */
     for(i = 0; i < nrSens; i++)
     {
@@ -1870,7 +1887,7 @@ void *controlWifiLED(void *self)
                     }
                     break;
                 case CMD_DIM:
-                    tempBrightness = 2;
+                    tempBrightness_next = 2;
                     break;
                 case CMD_KDI_ACTIVATE:
                     if(PBstarted != FALSE)

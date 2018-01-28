@@ -11,7 +11,7 @@ if(isset($_POST['Cmd']))
     if( (($_POST['Cmd'] == '7') || ($_POST['Cmd'] == '8')) &&
         (($_POST['MediaType'] != 'movie') && ($_POST['MediaType'] != 'episode')) )
     {/* nothing to do */
-        goto end:
+        goto end;
     }
     //get actuator id
     $sql = "SELECT Ind FROM Actuators WHERE Type = 'SOCKET_CTRL_LED'";
@@ -21,14 +21,14 @@ if(isset($_POST['Cmd']))
         {
             while($res = $result->fetchArray(SQLITE3_ASSOC))
             {
-                $Act_Id = $res;
+                $Act_Id = $res['Ind'];
                 break;
             }
         break;
         }
         sleep(1);
     }while(1);
-
+    
     //write to FIFO, wait for Feedback
     exec("pgrep aGreenHouse", $output, $return);
     if($return == 0)
@@ -47,6 +47,7 @@ if(isset($_POST['Cmd']))
             }
             else
             {
+                fflush($fifo);
                 fclose($fifo);
                 if(($fifo = fopen('/var/lib/aGreenHouse/respFIFO', 'r')) == false)
                 {
@@ -54,21 +55,11 @@ if(isset($_POST['Cmd']))
                 }
                 else
                 {
-                    stream_set_timeout($fifo, 2);
                     $respStr = fread($fifo, 2);
-                    $info = stream_get_meta_data($fifo);
-                    //for debugging purposes: $errmsg = 'response received!';
                     fclose($fifo);
-                    if ($info['timed_out'])
+                    if($respStr != 'OK')
                     {
-                        $errmsg = 'No response!';
-                    } 
-                    else
-                    {
-                        if($respStr != 'OK')
-                        {
-                            $errmsg = "Wrong response!";
-                        }
+                        $errmsg = "Wrong response!";
                     }
                 }
             }
@@ -78,7 +69,7 @@ if(isset($_POST['Cmd']))
     {//backend not running
         $errmsg = "Actuator controlling server not running!";
     }
-end: $errmsg = ""
+end: 
 }
 ?>
 
