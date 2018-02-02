@@ -1136,7 +1136,7 @@ static bool dimWifiLed(unsigned char curr_idx, unsigned char target_brightness, 
     }
     do
     {
-        curr_idx = curr_idx + direction;
+        curr_idx = (curr_idx + direction) % BRIGHTNESS_LEVELS;
         if(0x00 == BRIGHTcodes[curr_idx])
         {/* needs to be switched off */
             p_udp_cmd->code = OFFcodes[p_udp_cmd->zone];
@@ -1901,7 +1901,7 @@ void *controlWifiLED(void *self)
             }
             if(tempBrightness_next < BRIGHTNESS_LEVELS)
             {/* valid */
-                dimWifiLed(tempBrightness, tempBrightness_next, 1, &UDPcmd);
+                dimWifiLed(tempBrightness, BRIGHTcodes[tempBrightness_next], 1, &UDPcmd);
                 LEDstate = TRUE;
                 ((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->brightness = tempBrightness_next;
             }

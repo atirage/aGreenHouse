@@ -55,12 +55,26 @@ if(isset($_POST['Cmd']))
                 }
                 else
                 {
-                    $respStr = fread($fifo, 2);
-                    fclose($fifo);
-                    if($respStr != 'OK')
-                    {
-                        $errmsg = "Wrong response!";
+                    $read = array($fifo);
+                    $write = NULL;
+                    $except = NULL;
+                    if (false === ($num_changed_streams = stream_select($read, $write, $except, 2)))
+                    {/* Error handling */
+                        $errmsg = "Access error on response FIFO!";
                     }
+                    elseif ($num_changed_streams > 0)
+                    {/* read out data */
+                        $respStr = fread($fifo, 2);
+                        if($respStr != 'OK')
+                        {
+                            $errmsg = "Wrong response!";
+                        }
+                    }
+                    else
+                    {
+                        $errmsg = "Error reading response FIFO!";
+                    }
+                    fclose($fifo);
                 }
             }
         }

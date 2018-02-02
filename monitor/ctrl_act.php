@@ -17,17 +17,17 @@ $sel = array();
 //get actuators
 $sql = "SELECT Ind, Location, Type, ControlFunc FROM Actuators";
 do{
-	$result = $sqlObj->query($sql);
-	if($result instanceof Sqlite3Result)
-	{
-		while($res = $result->fetchArray(SQLITE3_ASSOC))
-		{
-    		$actuators[]=$res;
-    		$sel[]='0';
-		}
-		break;
-	}
-	sleep(1);
+    $result = $sqlObj->query($sql);
+    if($result instanceof Sqlite3Result)
+    {
+        while($res = $result->fetchArray(SQLITE3_ASSOC))
+        {
+            $actuators[]=$res;
+           $sel[]='0';
+        }
+        break;
+    }
+    sleep(1);
 }while(1);
 
 if(isset($_POST['Tab']))
@@ -86,22 +86,26 @@ if(isset($_POST['Tab']))
                     }
                     else
                     {
-                        stream_set_timeout($fifo, 2);
-                        $respStr = fread($fifo, 2);
-                        $info = stream_get_meta_data($fifo);
-                        //for debugging purposes: $errmsg = 'response received!';
-                        fclose($fifo);
-                        if ($info['timed_out'])
-                        {
-                            $errmsg = 'No response!';
-                        } 
-                        else
-                        {
+                        $read = array($fifo);
+                        $write = NULL;
+                        $except = NULL;
+                        if (false === ($num_changed_streams = stream_select($read, $write, $except, 2)))
+                        {/* Error handling */
+                            $errmsg = "Access error on response FIFO!";
+                        }
+                        elseif ($num_changed_streams > 0)
+                        {/* read out data */
+                            $respStr = fread($fifo, 2);
                             if($respStr != 'OK')
                             {
                                 $errmsg = "Wrong response!";
                             }
                         }
+                        else
+                        {
+                            $errmsg = "Error reading response FIFO!";
+                        }
+                        fclose($fifo);
                     }
                 }
             }

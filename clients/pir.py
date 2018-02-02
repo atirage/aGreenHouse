@@ -1,4 +1,4 @@
-from gpiozero import MotionSensor
+#from gpiozero import MotionSensor
 from PIL import Image
 from PIL import ImageDraw
 from PIL import ImageFont
@@ -6,6 +6,7 @@ from PIL import ImageFont
 #import subprocess
 import time
 import requests
+import RPi.GPIO as GPIO
 import Adafruit_GPIO.SPI as SPI
 import Adafruit_SSD1306
 
@@ -63,12 +64,18 @@ draw = ImageDraw.Draw(image)
 font = ImageFont.truetype('/home/pi/.fonts/OpenSans-Regular.ttf', size=28)
 
 # set up PIR -------------------------------
-pir = MotionSensor(21)
+#GPIO.setmode(GPIO.BOARD)
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(23, GPIO.IN)
+GPIO.setup(21, GPIO.IN)
+#pir = MotionSensor(21)
+
 timer = 255
 slow_timer = 0 
 motion_prev = False;
 amb_temp = "--"
 rh= "--"
+bright = false
 
 #for i in range(128,255):
 #    print(str(i) + '=' +chr(i))
@@ -110,8 +117,11 @@ while (True):
     disp.display()
 
     # motion sensor handling---------------
-    motion = pir.motion_detected
-    if motion and (not motion_prev):
+    #motion = pir.motion_detected
+    bright = GPIO.input(23)
+    motion = GPIO.input(21)
+    print(bright)
+    if motion and (not motion_prev) and (not bright):
       print("Motion detected!")
       timer = 255
       #subprocess.call(["wget", "-q", "-T =3", "-O/dev/null", "--user=atirage", "--password=januar14", "--post-data=Cmd=1", url + "kodi.php"])
