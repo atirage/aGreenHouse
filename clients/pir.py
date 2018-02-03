@@ -1,16 +1,19 @@
 #from gpiozero import MotionSensor
+#import subprocess
+
 from PIL import Image
 from PIL import ImageDraw
 from PIL import ImageFont
 
-#import subprocess
 import time
+import syslog
 import requests
 import RPi.GPIO as GPIO
 import Adafruit_GPIO.SPI as SPI
 import Adafruit_SSD1306
 
 url = "http://192.168.0.150/monitor/"
+#print(url)
 
 # set up PiOLED -------------------------------
 # Raspberry Pi pin configuration:
@@ -56,9 +59,6 @@ image = Image.new('1', (width, height))
  
 # Get drawing object to draw on image.
 draw = ImageDraw.Draw(image)
- 
-# Draw a black filled box to clear the image.
-#draw.rectangle((0,0,width,height), outline=0, fill=0)
 
 # Load font.
 font = ImageFont.truetype('/home/pi/.fonts/OpenSans-Regular.ttf', size=28)
@@ -66,25 +66,34 @@ font = ImageFont.truetype('/home/pi/.fonts/OpenSans-Regular.ttf', size=28)
 # set up PIR -------------------------------
 #GPIO.setmode(GPIO.BOARD)
 GPIO.setmode(GPIO.BCM)
-GPIO.setup(23, GPIO.IN)
+GPIO.setup(20, GPIO.IN)
 GPIO.setup(21, GPIO.IN)
 #pir = MotionSensor(21)
 
-timer = 255
+timer = 120
 slow_timer = 0 
 motion_prev = False;
 amb_temp = "--"
 rh= "--"
-bright = false
+bright = False
 
 #for i in range(128,255):
 #    print(str(i) + '=' +chr(i))
+
+#image = Image.new('1', (height, width))
+#draw.rectangle((0,0,height, width), outline=0, fill=0)
+#draw.text((0, 0), '2', font=font, fill=255)
+#draw.text((0, 42), '2', font=font, fill=255)
+#draw.text((12, 84), '\xB0', font=font, fill=255)
+#image1 = image.rotate(90, expand = 1)
+#print(image.size[0],image.size[1])
+#disp.image(image1)
+#disp.display()
 
 while (True):
     # handle PiOLED------------------------
     # Draw a black filled box to clear the image.
     draw.rectangle((0,0,width,height), outline=0, fill=0)
- 
     # Get Temperature from alarmpi
     if slow_timer == 0:
         r = requests.get(url + "current.php", auth=("atirage", "januar14"))
@@ -108,7 +117,6 @@ while (True):
                     #found
                     rh = line[i-3:i-1]+"%"
     # Write two lines of text.
-    #draw.text((x, top), amb_temp,  font=font, fill=255)
     draw.text((0, 0), amb_temp + ' ' + rh, font=font, fill=255)
     #image.rotate(90)
     
@@ -118,14 +126,14 @@ while (True):
 
     # motion sensor handling---------------
     #motion = pir.motion_detected
-    bright = GPIO.input(23)
+    bright = GPIO.input(20)
     motion = GPIO.input(21)
-    print(bright)
-    if motion and (not motion_prev) and (not bright):
-      print("Motion detected!")
+    if motion and (not motion_prev):
       timer = 255
-      #subprocess.call(["wget", "-q", "-T =3", "-O/dev/null", "--user=atirage", "--password=januar14", "--post-data=Cmd=1", url + "kodi.php"])
-      p = requests.post(url + "kodi.php", auth=("atirage", "januar14"), data = {"Cmd":"1"})
+      if (not bright):
+        syslog.syslog("Valid Motion detected!")
+        #subprocess.call(["wget", "-q", "-T =3", "-O/dev/null", "--user=atirage", "--password=januar14", "--post-data=Cmd=1", url + "kodi.php"])
+        p = requests.post(url + "kodi.php", auth=("atirage", "januar14"), data = {"Cmd":"1"})
     else:
       if (not motion) and motion_prev:
           timer = 120
@@ -133,7 +141,7 @@ while (True):
     if 0 < timer < 255:
       timer -= 1
       if timer == 0:
-          print("No motion timeout!")
+          syslog.syslog("No motion timeout!")
           p = requests.post(url + "kodi.php", auth=("atirage", "januar14"), data = {"Cmd":"2"})
           #subprocess.call(["wget", "-q", "-T =3", "-O/dev/null", "--user=atirage", "--password=januar14", "--post-data=Cmd=2", url + "kodi.php"])
     motion_prev = motion

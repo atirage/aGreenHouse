@@ -1132,7 +1132,7 @@ static bool dimWifiLed(unsigned char curr_idx, unsigned char target_brightness, 
         {
             return FALSE;
         }
-        usleep(60000);
+        usleep(80000);
     }
     do
     {
@@ -1154,7 +1154,7 @@ static bool dimWifiLed(unsigned char curr_idx, unsigned char target_brightness, 
             {
                 return FALSE;
             }
-            usleep(40000);
+            usleep(60000);
         }
         if(direction > 0)
         {
@@ -1901,6 +1901,7 @@ void *controlWifiLED(void *self)
             }
             if(tempBrightness_next < BRIGHTNESS_LEVELS)
             {/* valid */
+                syslog(LOG_INFO, "Current brightness %d \n", BRIGHTcodes[tempBrightness]);
                 dimWifiLed(tempBrightness, BRIGHTcodes[tempBrightness_next], 1, &UDPcmd);
                 LEDstate = TRUE;
                 ((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->brightness = tempBrightness_next;
