@@ -6,6 +6,7 @@ from PIL import ImageDraw
 from PIL import ImageFont
 
 import time
+import datetime
 import syslog
 import requests
 import RPi.GPIO as GPIO
@@ -70,7 +71,7 @@ GPIO.setup(20, GPIO.IN)
 GPIO.setup(21, GPIO.IN)
 #pir = MotionSensor(21)
 
-timer = 120
+timer = 300
 slow_timer = 0 
 motion_prev = False;
 amb_temp = "--"
@@ -142,8 +143,13 @@ while (True):
       timer -= 1
       if timer == 0:
           syslog.syslog("No motion timeout!")
-          p = requests.post(url + "kodi.php", auth=("atirage", "januar14"), data = {"Cmd":"2"})
-          #subprocess.call(["wget", "-q", "-T =3", "-O/dev/null", "--user=atirage", "--password=januar14", "--post-data=Cmd=2", url + "kodi.php"])
+          #check if request is allowed
+          start = datetime.time(18,00)
+          end =  datetime.time(22,00)
+          timenow = datetime.datetime.now().time()
+          if not(start <= timenow <= end):
+             #subprocess.call(["wget", "-q", "-T =3", "-O/dev/null", "--user=atirage", "--password=januar14", "--post-data=Cmd=2", url + "kodi.php"]) 
+             p = requests.post(url + "kodi.php", auth=("atirage", "januar14"), data = {"Cmd":"2"})
     motion_prev = motion
     if slow_timer > 0:
         slow_timer -= 1

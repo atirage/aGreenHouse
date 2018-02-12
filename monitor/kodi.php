@@ -8,10 +8,18 @@ $Act_Id = "";
 
 if(isset($_POST['Cmd']))
 {/* submit */
-    if( (($_POST['Cmd'] == '7') || ($_POST['Cmd'] == '8')) &&
-        (($_POST['MediaType'] != 'movie') && ($_POST['MediaType'] != 'episode')) )
-    {/* nothing to do */
-        goto end;
+    /* write debug data to syslog */
+    openlog("KODIscript", LOG_NDELAY, LOG_USER);
+    syslog(LOG_INFO, "Received POST data: " $_POST['Cmd'] . ":" . $_POST['MediaType']);
+    closelog();
+        
+    if(($_POST['Cmd'] == '7') || ($_POST['Cmd'] == '8'))
+    {/* playback command */
+        $allowed = array('movie', 'episode', 'unknown');
+        if(!in_array($_POST['MediaType'], $allowed))
+        {/* nothing to do */
+            goto end;
+        }
     }
     //get actuator id
     $sql = "SELECT Ind FROM Actuators WHERE Type = 'SOCKET_CTRL_LED'";
