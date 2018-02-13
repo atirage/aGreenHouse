@@ -31,6 +31,7 @@
 
 #define BRIGHTNESS_LEVELS (20)
 #define COLORS (9)
+#define PAUSE_TIME (100000)
 
 #define FIND_MIN_AXIS(ax, a, b, c)      if((a) < (b)) {                          \
                                             if ((a) < (c)) { (ax) = AXIS_X; }    \
@@ -1132,7 +1133,8 @@ static bool dimWifiLed(unsigned char curr_idx, unsigned char target_brightness, 
         {
             return FALSE;
         }
-        usleep(80000);
+        /* acc. to http://iqjar.com/jar/home-automation-using-the-raspberry-pi-to-control-the-lights-in-your-home-over-wi-fi/ */
+        usleep(PAUSE_TIME);
     }
     do
     {
@@ -1154,7 +1156,7 @@ static bool dimWifiLed(unsigned char curr_idx, unsigned char target_brightness, 
             {
                 return FALSE;
             }
-            usleep(60000);
+            usleep(PAUSE_TIME);
         }
         if(direction > 0)
         {
@@ -1883,7 +1885,7 @@ void *controlWifiLED(void *self)
                 case CMD_ACTIVATE:
                     if(PBstarted == FALSE)
                     {
-                        tempBrightness_next = 11;
+                        tempBrightness_next = 16;
                     }
                     break;
                 case CMD_DIM:
@@ -1892,7 +1894,7 @@ void *controlWifiLED(void *self)
                 case CMD_KDI_ACTIVATE:
                     if(PBstarted != FALSE)
                     {
-                        tempBrightness_next = 11;
+                        tempBrightness_next = 16;
                         PBstarted = FALSE;
                     }
                     break;
