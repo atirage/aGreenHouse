@@ -31,7 +31,7 @@
 
 #define BRIGHTNESS_LEVELS (20)
 #define COLORS (9)
-#define PAUSE_TIME (100000)
+#define PAUSE_TIME (120000)
 
 #define FIND_MIN_AXIS(ax, a, b, c)      if((a) < (b)) {                          \
                                             if ((a) < (c)) { (ax) = AXIS_X; }    \
@@ -227,8 +227,9 @@ static void checkAlert(unsigned short int dbSensId, float value, t_e_unit unit);
 static void handleSwitches(const t_s_sensor *sensPtr, t_s_switch_states *SwStPtr, unsigned char switches);
 static bool dimWifiLed(unsigned char curr_idx, unsigned char target_brightness, short int direction, UDPCommand *p_udp_cmd);
 
-#ifdef GESTURE_DETECTION
+
 static float firstOrderFilter(float out_prev, float in);
+#ifdef GESTURE_DETECTION
 static void handleAccData(const t_s_sensor *sensPtr, const t_s_rf_watch_values *rfValues);
 static void detectGesture(t_s_acc_data *accPtr, t_e_axis axis);
 static void detectGesture_v2(t_s_rf_watch_data *accPtr);
@@ -1114,13 +1115,14 @@ static void detectGesture_v2(t_s_rf_watch_data *accPtr)
         accPtr->sample_count = 1;
     }
 }
+#endif
 
 static float firstOrderFilter(float out_prev, float in)
 {
     static const float a = 0.3; /* same constant as in OpenChronos */
     return out_prev + a * (in - out_prev);
 }
-#endif
+
 
 static bool dimWifiLed(unsigned char curr_idx, unsigned char target_brightness, short int direction, UDPCommand *p_udp_cmd)
 {
@@ -1156,7 +1158,7 @@ static bool dimWifiLed(unsigned char curr_idx, unsigned char target_brightness, 
             {
                 return FALSE;
             }
-            usleep(PAUSE_TIME);
+            usleep(PAUSE_TIME / 2u);
         }
         if(direction > 0)
         {
@@ -1528,7 +1530,7 @@ void *readDhtSensor(void *self)
 {
     const t_s_sensor *SensPtr = (const t_s_sensor *) self;
     char fName[48];
-    t_s_dht_values DhtValues;
+    t_s_dht_values DhtValues, DhtValuesFltd = {NAN, NAN};
     unsigned char Pin;
     unsigned TimeStamp;
     float params[NR_UNITS] = {0};
@@ -1563,25 +1565,36 @@ void *readDhtSensor(void *self)
         }
         else
         {
+            /* 1st order filter */
+            if((NAN == DhtValuesFltd.temperature) || (NAN == DhtValuesFltd.humidity))
+            {
+                DhtValuesFltd.temperature = DhtValues.temperature;
+                DhtValuesFltd.humidity = DhtValues.humidity;
+            }
+            else
+            {
+                DhtValuesFltd.temperature = firstOrderFilter(DhtValuesFltd.temperature, DhtValues.temperature);
+                DhtValuesFltd.humidity = firstOrderFilter(DhtValuesFltd.humidity, DhtValues.humidity);
+            }
             if(SensPtr->headAct)
             {
-                params[U_C] = DhtValues.temperature;
-                params[U_PERCENT] = DhtValues.humidity;
+                params[U_C] = DhtValuesFltd.temperature;
+                params[U_PERCENT] = DhtValuesFltd.humidity;
                 issueActCmd(SensPtr->headAct, params);
             }
             /* insert into DB */
             TimeStamp = (unsigned)time(NULL);
-            if(insertSensorValue(SensPtr, DhtValues.humidity, U_PERCENT, TimeStamp) != SQLITE_OK)
+            if(insertSensorValue(SensPtr, DhtValuesFltd.humidity, U_PERCENT, TimeStamp) != SQLITE_OK)
             {
                 syslog(LOG_ERR, "SQL error when inserting values for sensor: %d !\n", SensPtr->DbId);
             }
-            if(insertSensorValue(SensPtr, DhtValues.temperature, U_C, TimeStamp) != SQLITE_OK)
+            if(insertSensorValue(SensPtr, DhtValuesFltd.temperature, U_C, TimeStamp) != SQLITE_OK)
             {
                 syslog(LOG_ERR, "SQL error when inserting values for sensor: %d !\n", SensPtr->DbId);
             }
             /* check alert */
-            checkAlert(SensPtr->DbId, DhtValues.temperature, U_C);
-            checkAlert(SensPtr->DbId, DhtValues.humidity, U_PERCENT);
+            checkAlert(SensPtr->DbId, DhtValuesFltd.temperature, U_C);
+            checkAlert(SensPtr->DbId, DhtValuesFltd.humidity, U_PERCENT);
             /* go to sleep */
             sleep(SensPtr->SampleTime);
         }

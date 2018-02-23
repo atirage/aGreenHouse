@@ -13,7 +13,9 @@
 #define DEBUG
 
 #define RF_FRAME_SIZE (7u)
+
 #define DHT_TYPE (11)
+#define OFFSET_DHT_TEMP (-0.9)
 
 #define OFFSET_ACC_X (0)
 #define OFFSET_ACC_Y (0)
@@ -158,7 +160,7 @@ unsigned int getDht22Values(unsigned char pin, t_s_dht_values *dhtValues)
     }
 #if (DHT_TYPE == 11)
     dhtValues->humidity = buffer[0];
-    dhtValues->temperature = buffer[2];
+    dhtValues->temperature = buffer[2] + OFFSET_DHT_TEMP;
     if( (dhtValues->humidity < 20) || (dhtValues->humidity > 90) ||
         (dhtValues->temperature < 0) || (dhtValues->temperature > 50) )
     {/* out of range values, probably caused by a 2bit error which the checksum cannot detect */
