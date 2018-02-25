@@ -10,12 +10,12 @@ if(isset($_POST['Cmd']))
 {/* submit */
     /* write debug data to syslog */
     openlog("KODIscript", LOG_NDELAY, LOG_USER);
-    syslog(LOG_INFO, "Received POST data: " $_POST['Cmd'] . ":" . $_POST['MediaType']);
+    syslog(LOG_INFO, "Received POST data: ".$_POST['Cmd'].":".$_POST['MediaType']);
     closelog();
         
     if(($_POST['Cmd'] == '7') || ($_POST['Cmd'] == '8'))
     {/* playback command */
-        $allowed = array('movie', 'episode', 'unknown');
+        $allowed = array('movie', 'episode', 'unknown', 'stream');
         if(!in_array($_POST['MediaType'], $allowed))
         {/* nothing to do */
             goto end;

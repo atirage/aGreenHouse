@@ -62,7 +62,7 @@ image = Image.new('1', (width, height))
 draw = ImageDraw.Draw(image)
 
 # Load font.
-font = ImageFont.truetype('/home/pi/.fonts/OpenSans-Regular.ttf', size=28)
+font = ImageFont.truetype('/home/pi/.fonts/OpenSans-Regular.ttf', size=21)
 
 # set up PIR -------------------------------
 #GPIO.setmode(GPIO.BOARD)
@@ -110,13 +110,15 @@ while (True):
                 substr = line[i-13:i-1]
                 if substr.find("Living"):
                     #found
-                    amb_temp = line[i-3:i-1]+"\xB0C"
+                    j = substr.rfind("\"")
+                    amb_temp = substr[j+1:len(substr)]+"\xB0C"
             i = line.find("%")
             if i != -1:
                 substr = line[i-13:i-1]
                 if substr.find("Living"):
                     #found
-                    rh = line[i-3:i-1]+"%"
+                    j = substr.rfind("\"")
+                    rh = substr[j+1:len(substr)]+"%"
     # Write two lines of text.
     draw.text((0, 0), amb_temp + ' ' + rh, font=font, fill=255)
     #image.rotate(90)

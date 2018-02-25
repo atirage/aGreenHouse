@@ -1566,7 +1566,7 @@ void *readDhtSensor(void *self)
         else
         {
             /* 1st order filter */
-            if((NAN == DhtValuesFltd.temperature) || (NAN == DhtValuesFltd.humidity))
+            if(isnan(DhtValuesFltd.temperature) || isnan(DhtValuesFltd.humidity))
             {
                 DhtValuesFltd.temperature = DhtValues.temperature;
                 DhtValuesFltd.humidity = DhtValues.humidity;
@@ -1574,7 +1574,9 @@ void *readDhtSensor(void *self)
             else
             {
                 DhtValuesFltd.temperature = firstOrderFilter(DhtValuesFltd.temperature, DhtValues.temperature);
+                DhtValuesFltd.temperature = roundf(DhtValuesFltd.temperature * 10) / 10;
                 DhtValuesFltd.humidity = firstOrderFilter(DhtValuesFltd.humidity, DhtValues.humidity);
+                DhtValuesFltd.humidity = roundf(DhtValuesFltd.humidity * 10) / 10;
             }
             if(SensPtr->headAct)
             {
