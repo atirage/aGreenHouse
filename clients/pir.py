@@ -70,12 +70,15 @@ GPIO.setmode(GPIO.BCM)
 GPIO.setup(20, GPIO.IN)
 GPIO.setup(21, GPIO.IN)
 #pir = MotionSensor(21)
-
-timer = 300
-slow_timer = 0 
-motion_prev = False;
+CONST_RELOAD_S = 300
+CONST_NO_MOTION_S = 120
+#var init
+timer = CONST_NO_MOTION_S
+slow_timer = 0
+motion_prev = False
 amb_temp = "--"
-rh= "--"
+rh = "--"
+separator = ":"
 bright = False
 
 #for i in range(128,255):
@@ -120,7 +123,7 @@ while (True):
                     j = substr.rfind("\"")
                     rh = substr[j+1:len(substr)]+"%"
     # Write two lines of text.
-    draw.text((0, 0), amb_temp + ' ' + rh, font=font, fill=255)
+    draw.text((0, 0), amb_temp + separator + rh, font=font, fill=255)
     #image.rotate(90)
     
     # Display image.
@@ -139,7 +142,7 @@ while (True):
         p = requests.post(url + "kodi.php", auth=("atirage", "januar14"), data = {"Cmd":"1"})
     else:
       if (not motion) and motion_prev:
-          timer = 120
+          timer = CONST_NO_MOTION_S
     
     if 0 < timer < 255:
       timer -= 1
@@ -147,14 +150,20 @@ while (True):
           syslog.syslog("No motion timeout!")
           #check if request is allowed
           start = datetime.time(18,00)
-          end =  datetime.time(22,00)
+          end = datetime.time(22,00)
           timenow = datetime.datetime.now().time()
           if not(start <= timenow <= end):
              #subprocess.call(["wget", "-q", "-T =3", "-O/dev/null", "--user=atirage", "--password=januar14", "--post-data=Cmd=2", url + "kodi.php"]) 
              p = requests.post(url + "kodi.php", auth=("atirage", "januar14"), data = {"Cmd":"2"})
+          else:
+             timer = CONST_NO_MOTION_S
     motion_prev = motion
     if slow_timer > 0:
         slow_timer -= 1
     else:
-        slow_timer = 300
+        slow_timer = CONST_RELOAD_S
+    if separator == ":":
+        separator = "."
+    else:
+        separator = ":"
     time.sleep(1)

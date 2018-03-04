@@ -31,7 +31,7 @@
 
 #define BRIGHTNESS_LEVELS (20)
 #define COLORS (9)
-#define PAUSE_TIME (120000)
+#define PAUSE_TIME (160000)
 
 #define FIND_MIN_AXIS(ax, a, b, c)      if((a) < (b)) {                          \
                                             if ((a) < (c)) { (ax) = AXIS_X; }    \
