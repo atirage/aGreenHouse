@@ -724,10 +724,10 @@ static int getAllActuators_CB(void *countRow, int nCol, char **valCol, char **na
     switch(actuators[i].Type)
     {
     case ON_OFF_TIME:/* 1010..1010|1800 */
+    case SOCKET_CTRL_LED:
         actuators[i].log_actuation = TRUE;
         break;
     case ON_OFF_FDB:/* 23.5|1.5 */
-    case SOCKET_CTRL_LED:
     case SOCKET_CTRL_KODI:
     default:
         actuators[i].log_actuation = FALSE;

@@ -13,8 +13,47 @@ import RPi.GPIO as GPIO
 import Adafruit_GPIO.SPI as SPI
 import Adafruit_SSD1306
 
-url = "http://192.168.0.150/monitor/"
-#print(url)
+URL = "http://192.168.0.150/monitor/"
+KODI_URL = "http://librelec:8080/jsonrpc"
+
+def CheckTimeIn(h0, m0, h1, m1):
+    start = datetime.time(h0, m0)
+    end = datetime.time(h1, m1)
+    timenow = datetime.datetime.now().time()
+    if (start <= timenow <= end):
+        return True
+    else:
+        return False 
+
+def GetKodiStatus():
+    player_active = False
+    r = requests.post(KODI_URL, data = { 'jsonrpc': '2.0', 'id': 0, 'method': 'Player.GetActivePlayers', 'params': {} })
+    if r.status_code == 200:
+        player_active = len(r.json['result']) != 0
+    return player_active
+
+def GetLivingData(ambT, ambRH, wifiLED):
+    r = requests.get(URL + "current.php", auth=("atirage", "januar14"))
+    rv = r.status_code
+    if rv == 200:
+        #find ambient temperature
+        lines = (r.content).split('\n')
+        for line in lines:
+            i = line.find("\u00BAC")
+            if i != -1:
+                substr = line[i-13:i-1]
+                if substr.find("Living"):
+                    #found
+                    j = substr.rfind("\"")
+                    ambT = substr[j+1:len(substr)]+"\xB0C"
+            i = line.find("%")
+            if i != -1:
+                substr = line[i-13:i-1]
+                if substr.find("Living"):
+                    #found
+                    j = substr.rfind("\"")
+                    ambRH = substr[j+1:len(substr)]+"%"
+    return ambT, ambRH, wifiLED
 
 # set up PiOLED -------------------------------
 # Raspberry Pi pin configuration:
@@ -23,7 +62,6 @@ RST = None
 DC = 23
 SPI_PORT = 0
 SPI_DEVICE = 0
- 
 # 128x32 display with hardware I2C:
 disp = Adafruit_SSD1306.SSD1306_128_32(rst=RST)
  
@@ -78,6 +116,7 @@ slow_timer = 0
 motion_prev = False
 amb_temp = "--"
 rh = "--"
+wifi_LED = False
 separator = ":"
 bright = False
 
@@ -100,28 +139,7 @@ while (True):
     draw.rectangle((0,0,width,height), outline=0, fill=0)
     # Get Temperature from alarmpi
     if slow_timer == 0:
-        r = requests.get(url + "current.php", auth=("atirage", "januar14"))
-        rv = r.status_code
-    else:
-        rv = 404 #dummy
-    if rv == 200:
-        #find ambient temperature
-        lines = (r.content).split('\n')
-        for line in lines:
-            i = line.find("\u00BAC")
-            if i != -1:
-                substr = line[i-13:i-1]
-                if substr.find("Living"):
-                    #found
-                    j = substr.rfind("\"")
-                    amb_temp = substr[j+1:len(substr)]+"\xB0C"
-            i = line.find("%")
-            if i != -1:
-                substr = line[i-13:i-1]
-                if substr.find("Living"):
-                    #found
-                    j = substr.rfind("\"")
-                    rh = substr[j+1:len(substr)]+"%"
+        amb_temp, rh, wifi_LED = GetLivingData(amb_temp, rh, wifi_LED)
     # Write two lines of text.
     draw.text((0, 0), amb_temp + separator + rh, font=font, fill=255)
     #image.rotate(90)
@@ -149,14 +167,11 @@ while (True):
       if timer == 0:
           syslog.syslog("No motion timeout!")
           #check if request is allowed
-          start = datetime.time(18,00)
-          end = datetime.time(22,00)
-          timenow = datetime.datetime.now().time()
-          if not(start <= timenow <= end):
-             #subprocess.call(["wget", "-q", "-T =3", "-O/dev/null", "--user=atirage", "--password=januar14", "--post-data=Cmd=2", url + "kodi.php"]) 
-             p = requests.post(url + "kodi.php", auth=("atirage", "januar14"), data = {"Cmd":"2"})
-          else:
-             timer = CONST_NO_MOTION_S
+          if GetKodiStatus() == False:
+              p = requests.post(url + "kodi.php", auth=("atirage", "januar14"), data = {"Cmd":"2"})
+              #subprocess.call(["wget", "-q", "-T =3", "-O/dev/null", "--user=atirage", "--password=januar14", "--post-data=Cmd=2", url + "kodi.php"])
+              timer = CONST_NO_MOTION_S
+              
     motion_prev = motion
     if slow_timer > 0:
         slow_timer -= 1
