@@ -14,7 +14,7 @@ import Adafruit_GPIO.SPI as SPI
 import Adafruit_SSD1306
 
 URL = "http://192.168.0.150/monitor/"
-KODI_URL = "http://librelec:8080/jsonrpc"
+KODI_URL = "http://192.168.0.178:8080/jsonrpc"
 
 def CheckTimeIn(h0, m0, h1, m1):
     start = datetime.time(h0, m0)
@@ -27,9 +27,9 @@ def CheckTimeIn(h0, m0, h1, m1):
 
 def GetKodiStatus():
     player_active = False
-    r = requests.post(KODI_URL, data = { 'jsonrpc': '2.0', 'id': 0, 'method': 'Player.GetActivePlayers', 'params': {} })
+    r = requests.post(KODI_URL, json = {"jsonrpc": "2.0", "method": "Player.GetActivePlayers", "id": 1})
     if r.status_code == 200:
-        player_active = len(r.json['result']) != 0
+        player_active = len((r.json())['result']) != 0
     return player_active
 
 def GetLivingData(ambT, ambRH, wifiLED):
