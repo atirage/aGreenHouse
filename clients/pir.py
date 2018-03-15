@@ -36,24 +36,43 @@ def GetLivingData(ambT, ambRH, wifiLED):
     r = requests.get(URL + "current.php", auth=("atirage", "januar14"))
     rv = r.status_code
     if rv == 200:
-        #find ambient temperature
-        lines = (r.content).split('\n')
-        for line in lines:
-            i = line.find("\u00BAC")
-            if i != -1:
-                substr = line[i-13:i-1]
-                if substr.find("Living"):
-                    #found
-                    j = substr.rfind("\"")
-                    ambT = substr[j+1:len(substr)]+"\xB0C"
-            i = line.find("%")
-            if i != -1:
-                substr = line[i-13:i-1]
-                if substr.find("Living"):
-                    #found
-                    j = substr.rfind("\"")
-                    ambRH = substr[j+1:len(substr)]+"%"
-    return ambT, ambRH, wifiLED
+        start = 0
+        end = len(r.content) - 1
+        target = 3
+        while start < end:
+            i = (r.content).find("addRows", start, end)
+            if(i != -1):
+                j = (r.content).find(";", i, end)
+                line = (r.content)[i : j]
+                #look for amb temp
+                k = line.find("\u00BAC")
+                if k != -1:
+                    if line.find("Living", k - 13, k - 1):
+                        l = line.rfind("\"", k - 13, k - 1)
+                        target -= 1
+                        ambT = line[l + 1 : k] + "\xB0C"
+                #look for RH
+                k = line.find("%")
+                if k != -1:
+                    if line.find("Living", k - 13, k -1):
+                        l = line.rfind("\"", k - 13, k -1)
+                        target -= 1
+                        ambRH = line[l + 1 : k] + "%"
+                #look for wifiLED state
+                k = line.find("Lobby")
+                if k != -1:
+                    if line.find("ON", k + 5, k + 15) != -1:
+                        target -= 1
+                        wifi_LED = True
+                    elif line.find("OFF", k + 5, k + 15) != -1:
+                        target -= 1
+                        wifi_LED = False
+                start = j
+            else:
+                start = end
+            if target <= 0:
+                start = end
+    return ambT, ambRH, wifi_LED
 
 # set up PiOLED -------------------------------
 # Raspberry Pi pin configuration:
@@ -170,6 +189,7 @@ while (True):
           if GetKodiStatus() == False:
               p = requests.post(url + "kodi.php", auth=("atirage", "januar14"), data = {"Cmd":"2"})
               #subprocess.call(["wget", "-q", "-T =3", "-O/dev/null", "--user=atirage", "--password=januar14", "--post-data=Cmd=2", url + "kodi.php"])
+          else:
               timer = CONST_NO_MOTION_S
               
     motion_prev = motion

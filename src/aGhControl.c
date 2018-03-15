@@ -1922,6 +1922,10 @@ void *controlWifiLED(void *self)
                 dimWifiLed(tempBrightness, BRIGHTcodes[tempBrightness_next], 1, &UDPcmd);
                 LEDstate = TRUE;
                 ((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->brightness = tempBrightness_next;
+                if((insertActuatorState(ActPtr, TRUE, U_NONE)) != SQLITE_OK)
+                {
+                    syslog(LOG_ERR, "SQL error when inserting state for actuator: %d !\n", ActPtr->DbId);
+                }
             }
         }
         else
@@ -1949,6 +1953,10 @@ void *controlWifiLED(void *self)
                     dimWifiLed(tempBrightness, 0, -1, &UDPcmd);
                     LEDstate = FALSE;
                     ((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->brightness = 0;
+                    if((insertActuatorState(ActPtr, FALSE, U_NONE)) != SQLITE_OK)
+                    {
+                        syslog(LOG_ERR, "SQL error when inserting state for actuator: %d !\n", ActPtr->DbId);
+                    }
                 }
                 else
                 {
@@ -1957,10 +1965,6 @@ void *controlWifiLED(void *self)
                     ((t_s_led_ctrl_fct *)(ActPtr->ctrlFnc))->brightness = tempBrightness_next;
                 }
             }
-        }
-        if((insertActuatorState(ActPtr, LEDstate, U_NONE)) != SQLITE_OK)
-        {
-            syslog(LOG_ERR, "SQL error when inserting state for actuator: %d !\n", ActPtr->DbId);
         }
     }
     return NULL;
