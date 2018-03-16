@@ -13,8 +13,14 @@ import RPi.GPIO as GPIO
 import Adafruit_GPIO.SPI as SPI
 import Adafruit_SSD1306
 
+from envirophat import weather
+from envirophat import light
+
 URL = "http://192.168.0.150/monitor/"
 KODI_URL = "http://192.168.0.178:8080/jsonrpc"
+
+def GetImgOffset(t, t1, t2):
+    return 0
 
 def CheckTimeIn(h0, m0, h1, m1):
     start = datetime.time(h0, m0)
@@ -32,7 +38,7 @@ def GetKodiStatus():
         player_active = len((r.json())['result']) != 0
     return player_active
 
-def GetLivingData(ambT, ambRH, wifiLED):
+def GetLivingData(ambT, ambRH, wifiLED, mask):
     r = requests.get(URL + "current.php", auth=("atirage", "januar14"))
     rv = r.status_code
     if rv == 200:
@@ -44,33 +50,36 @@ def GetLivingData(ambT, ambRH, wifiLED):
             if(i != -1):
                 j = (r.content).find(";", i, end)
                 line = (r.content)[i : j]
-                #look for amb temp
-                k = line.find("\u00BAC")
-                if k != -1:
-                    if line.find("Living", k - 13, k - 1):
-                        l = line.rfind("\"", k - 13, k - 1)
-                        target -= 1
-                        ambT = line[l + 1 : k] + "\xB0C"
-                #look for RH
-                k = line.find("%")
-                if k != -1:
-                    if line.find("Living", k - 13, k -1):
-                        l = line.rfind("\"", k - 13, k -1)
-                        target -= 1
-                        ambRH = line[l + 1 : k] + "%"
-                #look for wifiLED state
-                k = line.find("Lobby")
-                if k != -1:
-                    if line.find("ON", k + 5, k + 15) != -1:
-                        target -= 1
-                        wifi_LED = True
-                    elif line.find("OFF", k + 5, k + 15) != -1:
-                        target -= 1
-                        wifi_LED = False
+                if mask & 0x01:
+                    #look for amb temp
+                    k = line.find("\u00BAC")
+                    if k != -1:
+                        if line.find("Living", k - 13, k - 1):
+                            l = line.rfind("\"", k - 13, k - 1)
+                            mask &= 0xFE 
+                            ambT = line[l + 1 : k] + "\xB0C"
+                if mask & 0x02:
+                    #look for RH
+                    k = line.find("%")
+                    if k != -1:
+                        if line.find("Living", k - 13, k -1):
+                            l = line.rfind("\"", k - 13, k -1)
+                            mask &= 0xFD
+                            ambRH = line[l + 1 : k] + "%"
+                if mask & 0x04:
+                    #look for wifiLED state
+                    k = line.find("Lobby")
+                    if k != -1:
+                        if line.find("ON", k + 5, k + 15) != -1:
+                            mask &= 0xFB
+                            wifi_LED = True
+                        elif line.find("OFF", k + 5, k + 15) != -1:
+                            mask &= 0xFB
+                            wifi_LED = False
                 start = j
             else:
                 start = end
-            if target <= 0:
+            if mask == 0:
                 start = end
     return ambT, ambRH, wifi_LED
 
@@ -86,17 +95,13 @@ disp = Adafruit_SSD1306.SSD1306_128_32(rst=RST)
  
 # 128x64 display with hardware I2C:
 # disp = Adafruit_SSD1306.SSD1306_128_64(rst=RST)
- 
 # Alternatively you can specify an explicit I2C bus number, for example
 # with the 128x32 display you would use:
 # disp = Adafruit_SSD1306.SSD1306_128_32(rst=RST, i2c_bus=2)
- 
 # 128x32 display with hardware SPI:
 # disp = Adafruit_SSD1306.SSD1306_128_32(rst=RST, dc=DC, spi=SPI.SpiDev(SPI_PORT, SPI_DEVICE, max_speed_hz=8000000))
- 
 # 128x64 display with hardware SPI:
 # disp = Adafruit_SSD1306.SSD1306_128_64(rst=RST, dc=DC, spi=SPI.SpiDev(SPI_PORT, SPI_DEVICE, max_speed_hz=8000000))
- 
 # Alternatively you can specify a software SPI implementation by providing
 # digital GPIO pin numbers for all the required display pins.  For example
 # on a Raspberry Pi with the 128x32 display you might use:
@@ -104,28 +109,25 @@ disp = Adafruit_SSD1306.SSD1306_128_32(rst=RST)
 
 # Initialize library.
 disp.begin()
- 
 # Clear display.
 disp.clear()
 disp.display()
- 
 # Create blank image for drawing.
 # Make sure to create image with mode '1' for 1-bit color.
 width = disp.width
 height = disp.height
-image = Image.new('1', (width, height))
- 
+image = Image.new('1', (width, 3 * height))
 # Get drawing object to draw on image.
 draw = ImageDraw.Draw(image)
-
 # Load font.
-font = ImageFont.truetype('/home/pi/.fonts/OpenSans-Regular.ttf', size=21)
+font = ImageFont.truetype('/home/pi/.fonts/OpenSans-Regular.ttf', size=22)
 
 # set up PIR -------------------------------
 #GPIO.setmode(GPIO.BOARD)
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(20, GPIO.IN)
 GPIO.setup(21, GPIO.IN)
+GPIO.setup(4, GPIO.OUT)
 #pir = MotionSensor(21)
 CONST_RELOAD_S = 300
 CONST_NO_MOTION_S = 120
@@ -135,12 +137,11 @@ slow_timer = 0
 motion_prev = False
 amb_temp = "--"
 rh = "--"
+atm = "--"
 wifi_LED = False
+ldr = False
 separator = ":"
-bright = False
-
-#for i in range(128,255):
-#    print(str(i) + '=' +chr(i))
+disp_cycle = 0
 
 #image = Image.new('1', (height, width))
 #draw.rectangle((0,0,height, width), outline=0, fill=0)
@@ -153,30 +154,40 @@ bright = False
 #disp.display()
 
 while (True):
+    #collect inputs
+    #weather.temperature()
+    atm = weather.pressure()
+    bright = light.light()
+    ldr = GPIO.input(20)
+    motion = GPIO.input(21) #motion = pir.motion_detected
+    # Get data from alarmpi
+    if slow_timer == 0:
+        amb_temp, rh, wifi_LED = GetLivingData(amb_temp, rh, wifi_LED, 0x07)
     # handle PiOLED------------------------
     # Draw a black filled box to clear the image.
-    draw.rectangle((0,0,width,height), outline=0, fill=0)
-    # Get Temperature from alarmpi
-    if slow_timer == 0:
-        amb_temp, rh, wifi_LED = GetLivingData(amb_temp, rh, wifi_LED)
-    # Write two lines of text.
-    draw.text((0, 0), amb_temp + separator + rh, font=font, fill=255)
-    #image.rotate(90)
-    
+    draw.rectangle((0,0,width,3*height), outline=0, fill=0)
+    draw.text((0, 0), amb_temp, font=font, fill=255)
+    draw.text((0, height), rh, font=font, fill=255)
+    draw.text((0, 2*height), str(atm) + " hPa", font=font, fill=255)
+    # Write the lines of text.
+    if disp_cycle == 0:
+        image_tmp = image.crop((0,0,width,height))
+    elif disp_cycle == 1:
+        image_tmp = image.crop((0,height,width,2*height))
+    else:
+        image_tmp = image.crop((0,2*height,width,3*height))
     # Display image.
-    disp.image(image)
+    #image.rotate(90)
+    disp.image(image_tmp)
     disp.display()
 
     # motion sensor handling---------------
-    #motion = pir.motion_detected
-    bright = GPIO.input(20)
-    motion = GPIO.input(21)
     if motion and (not motion_prev):
       timer = 255
-      if (not bright):
+      if (not ldr):
         syslog.syslog("Valid Motion detected!")
+        p = requests.post(URL + "kodi.php", auth=("atirage", "januar14"), data = {"Cmd":"1"})
         #subprocess.call(["wget", "-q", "-T =3", "-O/dev/null", "--user=atirage", "--password=januar14", "--post-data=Cmd=1", url + "kodi.php"])
-        p = requests.post(url + "kodi.php", auth=("atirage", "januar14"), data = {"Cmd":"1"})
     else:
       if (not motion) and motion_prev:
           timer = CONST_NO_MOTION_S
@@ -184,10 +195,10 @@ while (True):
     if 0 < timer < 255:
       timer -= 1
       if timer == 0:
-          syslog.syslog("No motion timeout!")
           #check if request is allowed
           if GetKodiStatus() == False:
-              p = requests.post(url + "kodi.php", auth=("atirage", "januar14"), data = {"Cmd":"2"})
+              syslog.syslog("No motion timeout!")
+              p = requests.post(URL + "kodi.php", auth=("atirage", "januar14"), data = {"Cmd":"2"})
               #subprocess.call(["wget", "-q", "-T =3", "-O/dev/null", "--user=atirage", "--password=januar14", "--post-data=Cmd=2", url + "kodi.php"])
           else:
               timer = CONST_NO_MOTION_S
@@ -201,4 +212,11 @@ while (True):
         separator = "."
     else:
         separator = ":"
+    if disp_cycle < 2:
+        disp_cycle += 1
+    else:
+        disp_cycle = 0
     time.sleep(1)
+    
+#for i in range(128,255):
+#    print(str(i) + '=' +chr(i))
