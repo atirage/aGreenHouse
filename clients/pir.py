@@ -19,8 +19,12 @@ from envirophat import light
 URL = "http://192.168.0.150/monitor/"
 KODI_URL = "http://192.168.0.178:8080/jsonrpc"
 
-def GetImgOffset(t, t1, t2):
-    return 0
+def GetImgOffset(t):
+    global T
+    if t <= T/2:
+        return (64 * 2 * t) / T
+    else:
+        return (2 * 64 * (T - t)) / T
 
 def CheckTimeIn(h0, m0, h1, m1):
     start = datetime.time(h0, m0)
@@ -38,7 +42,7 @@ def GetKodiStatus():
         player_active = len((r.json())['result']) != 0
     return player_active
 
-def GetLivingData(ambT, ambRH, wifiLED, mask):
+def GetLivingData(ambT, ambRH, wifiLED, mask = 0x07):
     r = requests.get(URL + "current.php", auth=("atirage", "januar14"))
     rv = r.status_code
     if rv == 200:
@@ -72,16 +76,16 @@ def GetLivingData(ambT, ambRH, wifiLED, mask):
                     if k != -1:
                         if line.find("ON", k + 5, k + 15) != -1:
                             mask &= 0xFB
-                            wifi_LED = True
+                            wifiLED = True
                         elif line.find("OFF", k + 5, k + 15) != -1:
                             mask &= 0xFB
-                            wifi_LED = False
+                            wifiLED = False
                 start = j
             else:
                 start = end
             if mask == 0:
                 start = end
-    return ambT, ambRH, wifi_LED
+    return ambT, ambRH, wifiLED
 
 # set up PiOLED -------------------------------
 # Raspberry Pi pin configuration:
@@ -120,17 +124,17 @@ image = Image.new('1', (width, 3 * height))
 # Get drawing object to draw on image.
 draw = ImageDraw.Draw(image)
 # Load font.
-font = ImageFont.truetype('/home/pi/.fonts/OpenSans-Regular.ttf', size=22)
+font = ImageFont.truetype('/home/pi/.fonts/OpenSans-Regular.ttf', size=30)
 
 # set up PIR -------------------------------
 #GPIO.setmode(GPIO.BOARD)
+#GPIO.setup(20, GPIO.IN)
+#pir = MotionSensor(21)
 GPIO.setmode(GPIO.BCM)
-GPIO.setup(20, GPIO.IN)
 GPIO.setup(21, GPIO.IN)
 GPIO.setup(4, GPIO.OUT)
-#pir = MotionSensor(21)
-CONST_RELOAD_S = 300
-CONST_NO_MOTION_S = 120
+CONST_RELOAD_S = 3000
+CONST_NO_MOTION_S = 1200
 #var init
 timer = CONST_NO_MOTION_S
 slow_timer = 0
@@ -140,8 +144,10 @@ rh = "--"
 atm = "--"
 wifi_LED = False
 ldr = False
-separator = ":"
-disp_cycle = 0
+bright = 0
+T = 20
+t = 0
+sampler = 0
 
 #image = Image.new('1', (height, width))
 #draw.rectangle((0,0,height, width), outline=0, fill=0)
@@ -156,26 +162,31 @@ disp_cycle = 0
 while (True):
     #collect inputs
     #weather.temperature()
-    atm = weather.pressure()
-    bright = light.light()
-    ldr = GPIO.input(20)
-    motion = GPIO.input(21) #motion = pir.motion_detected
+    #ldr = GPIO.input(20)
+    if sampler % 10 == 0:
+        atm = round(weather.pressure()/101325, 2)
+        bright = light.light()
+        motion = GPIO.input(21) #motion = pir.motion_detected
+    #print bright, atm, weather.temperature()
     # Get data from alarmpi
     if slow_timer == 0:
-        amb_temp, rh, wifi_LED = GetLivingData(amb_temp, rh, wifi_LED, 0x07)
+        amb_temp, rh, wifi_LED = GetLivingData(amb_temp, rh, wifi_LED)
     # handle PiOLED------------------------
     # Draw a black filled box to clear the image.
     draw.rectangle((0,0,width,3*height), outline=0, fill=0)
-    draw.text((0, 0), amb_temp, font=font, fill=255)
-    draw.text((0, height), rh, font=font, fill=255)
-    draw.text((0, 2*height), str(atm) + " hPa", font=font, fill=255)
     # Write the lines of text.
-    if disp_cycle == 0:
-        image_tmp = image.crop((0,0,width,height))
-    elif disp_cycle == 1:
-        image_tmp = image.crop((0,height,width,2*height))
-    else:
-        image_tmp = image.crop((0,2*height,width,3*height))
+    draw.text((20, 0), amb_temp, font=font, fill=255)
+    draw.text((20, height), rh, font=font, fill=255)
+    draw.text((0, 2*height), str(atm) + " atm", font=font, fill=255)
+    #draw.text((0, 2*height), str(bright), font=font, fill=255)
+    y = GetImgOffset(t)
+    image_tmp = image.crop((0,y,width,y + height))
+    #if disp_cycle <= 1:
+    #    image_tmp = image.crop((0,0,width,height))
+    #elif disp_cycle <= 3:
+    #    image_tmp = image.crop((0,height,width,2*height))
+    #elif disp_cycle <= 5:
+    #    image_tmp = image.crop((0,2*height,width,3*height))
     # Display image.
     #image.rotate(90)
     disp.image(image_tmp)
@@ -184,14 +195,14 @@ while (True):
     # motion sensor handling---------------
     if motion and (not motion_prev):
       timer = 255
-      if (not ldr):
-        syslog.syslog("Valid Motion detected!")
+      if(bright < 45):
+        syslog.syslog("Valid Motion detected @brightness: " + str(bright))
         p = requests.post(URL + "kodi.php", auth=("atirage", "januar14"), data = {"Cmd":"1"})
         #subprocess.call(["wget", "-q", "-T =3", "-O/dev/null", "--user=atirage", "--password=januar14", "--post-data=Cmd=1", url + "kodi.php"])
     else:
       if (not motion) and motion_prev:
           timer = CONST_NO_MOTION_S
-    
+
     if 0 < timer < 255:
       timer -= 1
       if timer == 0:
@@ -208,15 +219,12 @@ while (True):
         slow_timer -= 1
     else:
         slow_timer = CONST_RELOAD_S
-    if separator == ":":
-        separator = "."
+    if t < T:
+        t += 1
     else:
-        separator = ":"
-    if disp_cycle < 2:
-        disp_cycle += 1
-    else:
-        disp_cycle = 0
-    time.sleep(1)
+        t = 0
+    sampler += 1
+    time.sleep(0.1)
     
 #for i in range(128,255):
 #    print(str(i) + '=' +chr(i))
