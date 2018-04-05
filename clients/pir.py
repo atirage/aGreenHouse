@@ -133,6 +133,8 @@ font = ImageFont.truetype('/home/pi/.fonts/OpenSans-Regular.ttf', size=30)
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(21, GPIO.IN)
 GPIO.setup(4, GPIO.OUT)
+
+STOPPED_TMR = 0xFFFF
 CONST_RELOAD_S = 3000
 CONST_NO_MOTION_S = 1200
 #var init
@@ -143,11 +145,12 @@ amb_temp = "--"
 rh = "--"
 atm = "--"
 wifi_LED = False
-ldr = False
 bright = 0
 T = 20
 t = 0
+y = 0
 sampler = 0
+hold = 9
 
 #image = Image.new('1', (height, width))
 #draw.rectangle((0,0,height, width), outline=0, fill=0)
@@ -179,22 +182,25 @@ while (True):
     draw.text((20, height), rh, font=font, fill=255)
     draw.text((0, 2*height), str(atm) + " atm", font=font, fill=255)
     #draw.text((0, 2*height), str(bright), font=font, fill=255)
-    y = GetImgOffset(t)
-    image_tmp = image.crop((0,y,width,y + height))
-    #if disp_cycle <= 1:
-    #    image_tmp = image.crop((0,0,width,height))
-    #elif disp_cycle <= 3:
-    #    image_tmp = image.crop((0,height,width,2*height))
-    #elif disp_cycle <= 5:
-    #    image_tmp = image.crop((0,2*height,width,3*height))
+    if hold == 0:
+        if t < T:
+            t += 1
+        else:
+            t = 0
+        y = GetImgOffset(t)
+        if y % 32 == 0:
+            hold = 9
+    else:
+        hold = (hold + 1) % 10
     # Display image.
     #image.rotate(90)
+    image_tmp = image.crop((0,y,width,y + height))
     disp.image(image_tmp)
     disp.display()
 
     # motion sensor handling---------------
     if motion and (not motion_prev):
-      timer = 255
+      timer = STOPPED_TMR
       if(bright < 45):
         syslog.syslog("Valid Motion detected @brightness: " + str(bright))
         p = requests.post(URL + "kodi.php", auth=("atirage", "januar14"), data = {"Cmd":"1"})
@@ -203,7 +209,7 @@ while (True):
       if (not motion) and motion_prev:
           timer = CONST_NO_MOTION_S
 
-    if 0 < timer < 255:
+    if 0 < timer < STOPPED_TMR:
       timer -= 1
       if timer == 0:
           #check if request is allowed
@@ -219,10 +225,6 @@ while (True):
         slow_timer -= 1
     else:
         slow_timer = CONST_RELOAD_S
-    if t < T:
-        t += 1
-    else:
-        t = 0
     sampler += 1
     time.sleep(0.1)
     
