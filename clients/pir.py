@@ -19,6 +19,10 @@ from envirophat import light
 URL = "http://192.168.0.150/monitor/"
 KODI_URL = "http://192.168.0.178:8080/jsonrpc"
 
+STOPPED_TMR = 0xFFFF
+h = 0.1 # needs to be < 1
+h_1 = int(1/h) 
+
 def GetImgOffset(t):
     global T
     if t <= T/2:
@@ -134,11 +138,14 @@ GPIO.setmode(GPIO.BCM)
 GPIO.setup(21, GPIO.IN)
 GPIO.setup(4, GPIO.OUT)
 
-STOPPED_TMR = 0xFFFF
-CONST_RELOAD_S = 3000
-CONST_NO_MOTION_S = 1200
+#timing constants
+CONST_RELOAD_S = (5 * 60 * h_1)    #5min
+CONST_NO_MOTION_S = (2 * 60 * h_1) #2min
+CONST_2_S = 2 * h_1                #2s
+
 #var init
 timer = CONST_NO_MOTION_S
+hold = CONST_2_S - 1
 slow_timer = 0
 motion_prev = False
 amb_temp = "--"
@@ -150,7 +157,6 @@ T = 20
 t = 0
 y = 0
 sampler = 0
-hold = 9
 
 #image = Image.new('1', (height, width))
 #draw.rectangle((0,0,height, width), outline=0, fill=0)
@@ -166,7 +172,7 @@ while (True):
     #collect inputs
     #weather.temperature()
     #ldr = GPIO.input(20)
-    if sampler % 10 == 0:
+    if sampler % h_1 == 0:
         atm = round(weather.pressure()/101325, 2)
         bright = light.light()
         motion = GPIO.input(21) #motion = pir.motion_detected
@@ -189,9 +195,9 @@ while (True):
             t = 0
         y = GetImgOffset(t)
         if y % 32 == 0:
-            hold = 9
+            hold = CONST_2_S - 1
     else:
-        hold = (hold + 1) % 10
+        hold = (hold + 1) % CONST_2_S
     # Display image.
     #image.rotate(90)
     image_tmp = image.crop((0,y,width,y + height))
@@ -226,7 +232,7 @@ while (True):
     else:
         slow_timer = CONST_RELOAD_S
     sampler += 1
-    time.sleep(0.1)
+    time.sleep(h)
     
 #for i in range(128,255):
 #    print(str(i) + '=' +chr(i))
