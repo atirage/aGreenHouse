@@ -13,11 +13,7 @@ import RPi.GPIO as GPIO
 import Adafruit_GPIO.SPI as SPI
 import Adafruit_SSD1306
 
-from envirophat import weather
-from envirophat import light
-
-URL = "http://192.168.0.150/monitor/"
-KODI_URL = "http://192.168.0.178:8080/jsonrpc"
+URL = "http://192.168.0.150/monitor/current.php"
 
 STOPPED_TMR = 0xFFFF
 h = 0.1 # needs to be < 1
@@ -39,15 +35,8 @@ def CheckTimeIn(h0, m0, h1, m1):
     else:
         return False 
 
-def GetKodiStatus():
-    player_active = False
-    r = requests.post(KODI_URL, json = {"jsonrpc": "2.0", "method": "Player.GetActivePlayers", "id": 1})
-    if r.status_code == 200:
-        player_active = len((r.json())['result']) != 0
-    return player_active
-
 def GetLivingData(ambT, ambRH, wifiLED, mask = 0x07):
-    r = requests.get(URL + "current.php", auth=("atirage", "januar14"))
+    r = requests.get(URL, auth=("atirage", "januar14"))
     rv = r.status_code
     if rv == 200:
         start = 0
@@ -130,33 +119,20 @@ draw = ImageDraw.Draw(image)
 # Load font.
 font = ImageFont.truetype('/home/pi/.fonts/OpenSans-Regular.ttf', size=30)
 
-# set up PIR -------------------------------
-#GPIO.setmode(GPIO.BOARD)
-#GPIO.setup(20, GPIO.IN)
-#pir = MotionSensor(21)
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(21, GPIO.IN)
-GPIO.setup(4, GPIO.OUT)
-
 #timing constants
 CONST_RELOAD_S = (5 * 60 * h_1)    #5min
-CONST_NO_MOTION_S = (2 * 60 * h_1) #2min
 CONST_2_S = 2 * h_1                #2s
 
 #var init
-timer = CONST_NO_MOTION_S
 hold = CONST_2_S - 1
 slow_timer = 0
-motion_prev = False
 amb_temp = "--"
 rh = "--"
 atm = "--"
 wifi_LED = False
-bright = 0
 T = 20
 t = 0
 y = 0
-sampler = 0
 
 #image = Image.new('1', (height, width))
 #draw.rectangle((0,0,height, width), outline=0, fill=0)
@@ -169,20 +145,12 @@ sampler = 0
 #disp.display()
 
 while (True):
-    #collect inputs
-    #weather.temperature()
-    #ldr = GPIO.input(20)
-    if sampler % h_1 == 0:
-        atm = round(weather.pressure()/101325, 2)
-        bright = light.light()
-        motion = GPIO.input(21) #motion = pir.motion_detected
-    #print bright, atm, weather.temperature()
     # Get data from alarmpi
     if slow_timer == 0:
         amb_temp, rh, wifi_LED = GetLivingData(amb_temp, rh, wifi_LED)
     # handle PiOLED------------------------
     # Draw a black filled box to clear the image.
-    draw.rectangle((0,0,width,3*height), outline=0, fill=0)
+    draw.rectangle((0, 0, width, 3*height), outline=0, fill=0)
     # Write the lines of text.
     draw.text((20, 0), amb_temp, font=font, fill=255)
     draw.text((20, height), rh, font=font, fill=255)
@@ -200,38 +168,14 @@ while (True):
         hold = (hold + 1) % CONST_2_S
     # Display image.
     #image.rotate(90)
-    image_tmp = image.crop((0,y,width,y + height))
+    image_tmp = image.crop((0, y, width, y + height))
     disp.image(image_tmp)
     disp.display()
 
-    # motion sensor handling---------------
-    if motion and (not motion_prev):
-      timer = STOPPED_TMR
-      if(bright < 45):
-        syslog.syslog("Valid Motion detected @brightness: " + str(bright))
-        p = requests.post(URL + "kodi.php", auth=("atirage", "januar14"), data = {"Cmd":"1"})
-        #subprocess.call(["wget", "-q", "-T =3", "-O/dev/null", "--user=atirage", "--password=januar14", "--post-data=Cmd=1", url + "kodi.php"])
-    else:
-      if (not motion) and motion_prev:
-          timer = CONST_NO_MOTION_S
-
-    if 0 < timer < STOPPED_TMR:
-      timer -= 1
-      if timer == 0:
-          #check if request is allowed
-          if GetKodiStatus() == False:
-              syslog.syslog("No motion timeout!")
-              p = requests.post(URL + "kodi.php", auth=("atirage", "januar14"), data = {"Cmd":"2"})
-              #subprocess.call(["wget", "-q", "-T =3", "-O/dev/null", "--user=atirage", "--password=januar14", "--post-data=Cmd=2", url + "kodi.php"])
-          else:
-              timer = CONST_NO_MOTION_S
-              
-    motion_prev = motion
     if slow_timer > 0:
         slow_timer -= 1
     else:
         slow_timer = CONST_RELOAD_S
-    sampler += 1
     time.sleep(h)
     
 #for i in range(128,255):
