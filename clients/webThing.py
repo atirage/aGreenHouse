@@ -1,7 +1,8 @@
+#python 3
 #temp_calibrated = temp - ((cpu_temp - temp)/factor)
 
 from webthing import (Action, Event, Property, Value, SingleThing, Thing, WebThingServer)
-import logging
+import syslog
 import threading
 import time
 import uuid
@@ -57,7 +58,7 @@ class EnvironSensor(Thing):
                               }))
         self.t = threading.Thread(target=self.detect_motion) 
         
-        logging.debug('starting the sensor update looping task')
+        syslog.syslog('Starting the sensor update looping task')
         self.t.start()
         self.update_PHATsensors()
 
@@ -82,13 +83,11 @@ def run_server():
     # In the single thing case, the thing's name will be broadcast.
     server = WebThingServer(SingleThing(sensors), port=8888)
     try:
-        logging.info('starting the server')
+        syslog.syslog('Starting the Webthing server')
         server.start()
     except KeyboardInterrupt:
-        logging.info('stopping the server')
         server.stop()
-        logging.info('done')
+        syslog.syslog('Webthing server stopped')
 
 if __name__ == '__main__':
-    logging.basicConfig(level=10, format="%(asctime)s %(filename)s:%(lineno)s %(levelname)s %(message)s")
     run_server()
