@@ -1,5 +1,4 @@
 import time
-import datetime
 import syslog
 import requests
 import websocket
@@ -23,7 +22,7 @@ def GetKodiStatus():
     return player_active
 
 def on_WebThingMsg(ws, message):
-    global timer, bright
+    global timer, bright, lock
     msg = json.loads(message)
     if msg.messageType == 'propertyStatus':
         for propId in msg.data:
@@ -45,10 +44,10 @@ def on_WebThingMsg(ws, message):
                 bright = msg.data[propId]
 
 def on_error(ws, error):
-    print(error)
+    syslog.syslog(error)
 
 def on_close(ws):
-    print("### closed ###")
+    syslog.syslog("Websocket closed!")
 
 def HandleNoMotion():
     global h, timer, lock
@@ -68,7 +67,6 @@ def HandleNoMotion():
 #var init
 timer = CONST_NO_MOTION_S
 lock = Lock()
-
 ws = websocket.WebSocketApp(WEB_THING, on_message=on_WebThingMsg, on_error=on_error, on_close=on_close)
 
 #will be called every 1sec
@@ -76,4 +74,5 @@ HandleNoMotion()
 
 #ws.on_open = on_open
 #connect ws and run
-ws.run_forever()
+while True:
+    ws.run_forever()

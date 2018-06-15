@@ -47,7 +47,8 @@ class EnvironSensor(Thing):
                                 'minimum': 0,
                                 'maximum': 3.0,
                               }))
-        #pressure sensor
+        #temperature sensor
+        self.cpu_temp = Value(0.0)
         self.temp = Value(0.0)
         self.add_property(
             Property(self, 'temperature', self.temp,
@@ -65,7 +66,12 @@ class EnvironSensor(Thing):
     def update_PHATsensors(self):
         self.pressure.notify_of_external_update(round(weather.pressure()/101325, 2))
         self.light.notify_of_external_update(light.light())
-        self.temp.notify_of_external_update(0.0)
+        fd = open('/sys/class/thermal/thermal_zone0/temp', 'r')
+        data = fd.read()
+        fd.close()
+        if data != 'NA':
+            self.cpu_temp = float(data)
+        self.temp.notify_of_external_update(weather.temperature() - ((self.cpu_temp - weather.temperature()) / 5.5))
         threading.Timer(h, self.update_PHATsensors).start()
         
     def detect_motion(self):
