@@ -1,16 +1,16 @@
-#python 3
+#python 3.5
 #temp_calibrated = temp - ((cpu_temp - temp)/factor)
 
+from asyncio import sleep, CancelledError, get_event_loop
 from webthing import (Action, Event, Property, Value, SingleThing, Thing, WebThingServer)
 import syslog
-import threading
 import time
 import uuid
 import RPi.GPIO as GPIO
 from envirophat import weather
 from envirophat import light
 
-h = 2 #1sec
+h = 2 #2sec
 
 class EnvironSensor(Thing):
     """An environment(motion, pressure, temp, light) sensor which updates every few seconds."""
@@ -57,29 +57,41 @@ class EnvironSensor(Thing):
                                 'minimum': -40.0,
                                 'maximum': 100.0,
                               }))
-        self.t = threading.Thread(target=self.detect_motion) 
-        
-        syslog.syslog('Starting the sensor update looping task')
-        self.t.start()
-        self.update_PHATsensors()
 
-    def update_PHATsensors(self):
-        self.pressure.notify_of_external_update(round(weather.pressure()/101325, 2))
-        self.light.notify_of_external_update(light.light())
-        fd = open('/sys/class/thermal/thermal_zone0/temp', 'r')
-        data = fd.read()
-        fd.close()
-        if data != 'NA':
-            self.cpu_temp = float(data)
-        self.temp.notify_of_external_update(weather.temperature() - ((self.cpu_temp - weather.temperature()) / 5.5))
-        threading.Timer(h, self.update_PHATsensors).start()
-        
-    def detect_motion(self):
         GPIO.setmode(GPIO.BCM)
         GPIO.setup(21, GPIO.IN)
-        while True:
-            GPIO.wait_for_edge(21, GPIO.BOTH)
-            self.motion.notify_of_external_update(GPIO.input(21))
+        syslog.syslog('Starting the sensor update looping task')
+        self.enviro_task = get_event_loop().create_task(self.update_PHATsensors())
+        self.motion_task = get_event_loop().create_task(self.detect_motion())
+        
+    async def update_PHATsensors(self):
+        try:
+            while True:
+                await sleep(h)
+                self.pressure.notify_of_external_update(round(weather.pressure()/101325, 2))
+                self.light.notify_of_external_update(light.light())
+                fd = open('/sys/class/thermal/thermal_zone0/temp', 'r')
+                data = fd.read()
+                fd.close()
+                if data != 'NA':
+                    self.cpu_temp = float(data)
+                self.temp.notify_of_external_update(weather.temperature() - ((self.cpu_temp - weather.temperature()) / 5.5))
+        except CancelledError:
+            pass
+        
+    async def detect_motion(self):
+        try:
+            while True:
+                await GPIO.wait_for_edge(21, GPIO.BOTH)
+                self.motion.notify_of_external_update(GPIO.input(21))
+        except CancelledError:
+            pass
+        
+    def cancel_tasks(self):
+        self.enviro_task.cancel()
+        self.motion_task.cancel()
+        get_event_loop().run_until_complete(self.enviro_task)
+        get_event_loop().run_until_complete(self.motion_task)
 
 def run_server():
     sensors = EnvironSensor()
@@ -92,6 +104,7 @@ def run_server():
         syslog.syslog('Starting the Webthing server')
         server.start()
     except KeyboardInterrupt:
+        sensors.cancel_tasks()
         server.stop()
         syslog.syslog('Webthing server stopped')
 
