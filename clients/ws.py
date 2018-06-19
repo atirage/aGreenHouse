@@ -1,13 +1,14 @@
 import time
-import syslog
+#import syslog
 import requests
 import websocket
 import threading
 import json
+import logging
 
 GW_URL = "http://127.0.0.1/monitor/kodi.php"
-KODI_URL = "http://127.0.0.1:8080/jsonrpc"
-WEB_THING = "http://raspi0:8888"
+KODI_URL = "http://192.168.0.178:8080/jsonrpc"
+WEB_THING = "ws://192.168.0.31:8888"
 
 h = 1
 STOPPED_TMR = 0xFF
@@ -23,6 +24,7 @@ def GetKodiStatus():
 
 def on_WebThingMsg(ws, message):
     global timer, bright, lock
+    logging.debug(message)
     msg = json.loads(message)
     if msg.messageType == 'propertyStatus':
         for propId in msg.data:
@@ -34,7 +36,7 @@ def on_WebThingMsg(ws, message):
                   timer = STOPPED_TMR
                   lock.release()
                   if(bright < 45):
-                    syslog.syslog("Valid Motion detected @brightness: " + str(bright))
+                    #syslog.syslog("Valid Motion detected @brightness: " + str(bright))
                     p = requests.post(GW_URL, auth=("atirage", "januar14"), data = {"Cmd":"1"})
                 else:
                     lock.acquire()
@@ -42,12 +44,13 @@ def on_WebThingMsg(ws, message):
                     lock.release()
             if propId == 'light':
                 bright = msg.data[propId]
+                print bright
 
 def on_error(ws, error):
-    syslog.syslog(error)
+    logging.debug(error)
 
 def on_close(ws):
-    syslog.syslog("Websocket closed!")
+    logging.debug("Websocket closed!")
 
 def HandleNoMotion():
     global h, timer, lock
@@ -57,7 +60,7 @@ def HandleNoMotion():
         if timer == 0:
             #check if request is allowed
             if GetKodiStatus() == False:
-                syslog.syslog("No motion timeout!")
+                #syslog.syslog("No motion timeout!")
                 p = requests.post(GW_URL, auth=("atirage", "januar14"), data = {"Cmd":"2"})
             else:
                 timer = CONST_NO_MOTION_S
@@ -66,7 +69,8 @@ def HandleNoMotion():
 
 #var init
 timer = CONST_NO_MOTION_S
-lock = Lock()
+logging.basicConfig(filename='ws.log', level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+lock = threading.Lock()
 ws = websocket.WebSocketApp(WEB_THING, on_message=on_WebThingMsg, on_error=on_error, on_close=on_close)
 
 #will be called every 1sec
@@ -74,5 +78,5 @@ HandleNoMotion()
 
 #ws.on_open = on_open
 #connect ws and run
-while True:
-    ws.run_forever()
+#while True:
+ws.run_forever()

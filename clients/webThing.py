@@ -62,7 +62,7 @@ class EnvironSensor(Thing):
         GPIO.setup(21, GPIO.IN)
         syslog.syslog('Starting the sensor update looping task')
         self.enviro_task = get_event_loop().create_task(self.update_PHATsensors())
-        self.motion_task = get_event_loop().create_task(self.detect_motion())
+        #self.motion_task = get_event_loop().create_task(self.detect_motion())
         
     async def update_PHATsensors(self):
         try:
@@ -74,8 +74,8 @@ class EnvironSensor(Thing):
                 data = fd.read()
                 fd.close()
                 if data != 'NA':
-                    self.cpu_temp = float(data)
-                self.temp.notify_of_external_update(weather.temperature() - ((self.cpu_temp - weather.temperature()) / 5.5))
+                    self.cpu_temp = float(data) / 1000.0
+                self.temp.notify_of_external_update(round(weather.temperature() - ((self.cpu_temp - weather.temperature()) / 5.5), 1))
         except CancelledError:
             pass
         
@@ -89,9 +89,9 @@ class EnvironSensor(Thing):
         
     def cancel_tasks(self):
         self.enviro_task.cancel()
-        self.motion_task.cancel()
+        #self.motion_task.cancel()
         get_event_loop().run_until_complete(self.enviro_task)
-        get_event_loop().run_until_complete(self.motion_task)
+        #get_event_loop().run_until_complete(self.motion_task)
 
 def run_server():
     sensors = EnvironSensor()
