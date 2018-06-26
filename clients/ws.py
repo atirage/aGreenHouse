@@ -1,10 +1,10 @@
 import time
-#import syslog
 import requests
 import websocket
 import threading
 import json
 import logging
+from logging.handlers import SysLogHandler
 
 GW_URL = "http://127.0.0.1/monitor/kodi.php"
 KODI_URL = "http://192.168.0.178:8080/jsonrpc"
@@ -17,9 +17,12 @@ bright = 0
 
 def GetKodiStatus():
     player_active = False
-    r = requests.post(KODI_URL, json = {"jsonrpc": "2.0", "method": "Player.GetActivePlayers", "id": 1})
-    if r.status_code == 200:
-        player_active = len((r.json())['result']) != 0
+    try:
+        r = requests.post(KODI_URL, json = {"jsonrpc": "2.0", "method": "Player.GetActivePlayers", "id": 1})
+        if r.status_code == 200:
+            player_active = len((r.json())['result']) != 0
+    except (ConnectionError, Timeout):
+        pass
     return player_active
 
 def on_WebThingMsg(ws, message):
@@ -37,7 +40,10 @@ def on_WebThingMsg(ws, message):
                   lock.release()
                   if(bright < 45):
                     #syslog.syslog("Valid Motion detected @brightness: " + str(bright))
-                    p = requests.post(GW_URL, auth=("atirage", "januar14"), data = {"Cmd":"1"})
+                    try:
+                        requests.post(GW_URL, auth=("atirage", "januar14"), data = {"Cmd":"1"})
+                    except (ConnectionError, Timeout):
+                        pass
                 else:
                     lock.acquire()
                     timer = CONST_NO_MOTION_S
@@ -61,7 +67,11 @@ def HandleNoMotion():
             #check if request is allowed
             if GetKodiStatus() == False:
                 #syslog.syslog("No motion timeout!")
-                p = requests.post(GW_URL, auth=("atirage", "januar14"), data = {"Cmd":"2"})
+                try:
+                    requests.post(GW_URL, auth=("atirage", "januar14"), data = {"Cmd":"2"})
+                except (ConnectionError, Timeout):
+                    #reload timer
+                    timer = CONST_NO_MOTION_S
             else:
                 timer = CONST_NO_MOTION_S
     lock.release()
@@ -69,7 +79,8 @@ def HandleNoMotion():
 
 #var init
 timer = CONST_NO_MOTION_S
-logging.basicConfig(filename='ws.log', level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+#logging.basicConfig(filename='ws.log', level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler = SysLogHandler(SYSLOG_ADDRESS, facility=SYSLOG_FACILITY)
 lock = threading.Lock()
 ws = websocket.WebSocketApp(WEB_THING, on_message=on_WebThingMsg, on_error=on_error, on_close=on_close)
 

@@ -36,48 +36,51 @@ def CheckTimeIn(h0, m0, h1, m1):
         return False 
 
 def GetLivingData(ambT, ambRH, wifiLED, mask = 0x07):
-    r = requests.get(URL, auth=("atirage", "januar14"))
-    rv = r.status_code
-    if rv == 200:
-        start = 0
-        end = len(r.content) - 1
-        target = 3
-        while start < end:
-            i = (r.content).find("addRows", start, end)
-            if(i != -1):
-                j = (r.content).find(";", i, end)
-                line = (r.content)[i : j]
-                if mask & 0x01:
-                    #look for amb temp
-                    k = line.find("\u00BAC")
-                    if k != -1:
-                        if line.find("Living", k - 13, k - 1):
-                            l = line.rfind("\"", k - 13, k - 1)
-                            mask &= 0xFE 
-                            ambT = line[l + 1 : k] + "\xB0C"
-                if mask & 0x02:
-                    #look for RH
-                    k = line.find("%")
-                    if k != -1:
-                        if line.find("Living", k - 13, k -1):
-                            l = line.rfind("\"", k - 13, k -1)
-                            mask &= 0xFD
-                            ambRH = line[l + 1 : k] + "%"
-                if mask & 0x04:
-                    #look for wifiLED state
-                    k = line.find("Lobby")
-                    if k != -1:
-                        if line.find("ON", k + 5, k + 15) != -1:
-                            mask &= 0xFB
-                            wifiLED = True
-                        elif line.find("OFF", k + 5, k + 15) != -1:
-                            mask &= 0xFB
-                            wifiLED = False
-                start = j
-            else:
-                start = end
-            if mask == 0:
-                start = end
+    try:
+        r = requests.get(URL, auth=("atirage", "januar14"))
+        rv = r.status_code
+        if rv == 200:
+            start = 0
+            end = len(r.content) - 1
+            target = 3
+            while start < end:
+                i = (r.content).find("addRows", start, end)
+                if(i != -1):
+                    j = (r.content).find(";", i, end)
+                    line = (r.content)[i : j]
+                    if mask & 0x01:
+                        #look for amb temp
+                        k = line.find("\u00BAC")
+                        if k != -1:
+                            if line.find("Living", k - 13, k - 1):
+                                l = line.rfind("\"", k - 13, k - 1)
+                                mask &= 0xFE 
+                                ambT = line[l + 1 : k] + "\xB0C"
+                    if mask & 0x02:
+                        #look for RH
+                        k = line.find("%")
+                        if k != -1:
+                            if line.find("Living", k - 13, k -1):
+                                l = line.rfind("\"", k - 13, k -1)
+                                mask &= 0xFD
+                                ambRH = line[l + 1 : k] + "%"
+                    if mask & 0x04:
+                        #look for wifiLED state
+                        k = line.find("Lobby")
+                        if k != -1:
+                            if line.find("ON", k + 5, k + 15) != -1:
+                                mask &= 0xFB
+                                wifiLED = True
+                            elif line.find("OFF", k + 5, k + 15) != -1:
+                                mask &= 0xFB
+                                wifiLED = False
+                    start = j
+                else:
+                    start = end
+                if mask == 0:
+                    start = end
+    except (ConnectionError, Timeout):
+        pass
     return ambT, ambRH, wifiLED
 
 # set up PiOLED -------------------------------
