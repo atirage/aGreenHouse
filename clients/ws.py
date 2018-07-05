@@ -24,12 +24,12 @@ def GetKodiStatus():
 
 def on_WebThingMsg(ws, message):
     global timer, bright, lock
-    logging.debug(message)
     msg = json.loads(message)
-    if msg.messageType == 'propertyStatus':
-        for propId in msg.data:
+    logging.debug(msg)
+    if msg['messageType'] == 'propertyStatus':
+        for propId in msg['data']:
             if propId == 'motion':
-                motion = msg.data[propId]
+                motion = msg['data'][propId]
                 # motion sensor handling
                 if motion:
                   lock.acquire()
@@ -43,7 +43,7 @@ def on_WebThingMsg(ws, message):
                     timer = CONST_NO_MOTION_S
                     lock.release()
             if propId == 'light':
-                bright = msg.data[propId]
+                bright = msg['data'][propId]
                 print bright
 
 def on_error(ws, error):
