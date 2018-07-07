@@ -62,36 +62,37 @@ class EnvironSensor(Thing):
         GPIO.setup(21, GPIO.IN)
         syslog.syslog('Starting the sensor update looping task')
         self.enviro_task = get_event_loop().create_task(self.update_PHATsensors())
-        #self.motion_task = get_event_loop().create_task(self.detect_motion())
+        self.motion_task = get_event_loop().create_task(self.detect_motion())
         
     async def update_PHATsensors(self):
         try:
             while True:
-                await sleep(h)
+                await asyncio.sleep(h)
                 self.pressure.notify_of_external_update(round(weather.pressure()/101325, 2))
                 self.light.notify_of_external_update(light.light())
                 fd = open('/sys/class/thermal/thermal_zone0/temp', 'r')
                 data = fd.read()
                 fd.close()
                 if data != 'NA':
-                    self.cpu_temp = float(data) / 1000.0
-                self.temp.notify_of_external_update(round(weather.temperature() - ((self.cpu_temp - weather.temperature()) / 5.5), 1))
+                    self.cpu_temp = floor(int(data) / 100.0) #0.1deg
+                amb_temp = floor(weather.temperature() * 10) #0.1deg
+                self.temp.notify_of_external_update(round((amb_temp - ((self.cpu_temp - amb_temp) / 2.0)) / 10.0, 1))
         except CancelledError:
             pass
         
     async def detect_motion(self):
         try:
             while True:
-                await GPIO.wait_for_edge(21, GPIO.BOTH)
+                await get_event_loop().run_in_executor(None, GPIO.wait_for_edge, channel = 21, edge = GPIO.BOTH) 
                 self.motion.notify_of_external_update(GPIO.input(21))
         except CancelledError:
             pass
         
     def cancel_tasks(self):
         self.enviro_task.cancel()
-        #self.motion_task.cancel()
+        self.motion_task.cancel()
         get_event_loop().run_until_complete(self.enviro_task)
-        #get_event_loop().run_until_complete(self.motion_task)
+        get_event_loop().run_until_complete(self.motion_task)
 
 def run_server():
     sensors = EnvironSensor()
