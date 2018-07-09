@@ -1,0 +1,20 @@
+[Unit]
+
+Description=piOLED Startup
+
+
+After=network.target
+
+
+
+[Service]
+
+ExecStart=/usr/local/bin/piOLED_startup.sh
+
+Type=forking
+
+
+
+[Install]
+
+WantedBy=multi-user.target

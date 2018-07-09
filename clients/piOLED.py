@@ -13,6 +13,8 @@ import RPi.GPIO as GPIO
 import Adafruit_GPIO.SPI as SPI
 import Adafruit_SSD1306
 
+from envirophat import weather
+
 URL = "http://192.168.0.150/monitor/current.php"
 
 STOPPED_TMR = 0xFFFF
@@ -148,8 +150,9 @@ y = 0
 #disp.display()
 
 while (True):
-    # Get data from alarmpi
     if slow_timer == 0:
+        atm = round(weather.pressure()/101325, 2)
+        # Get data from alarmpi
         amb_temp, rh, wifi_LED = GetLivingData(amb_temp, rh, wifi_LED)
     # handle PiOLED------------------------
     # Draw a black filled box to clear the image.

@@ -1,5 +1,4 @@
 import time
-#import syslog
 import requests
 import websocket
 import threading
@@ -13,7 +12,7 @@ WEB_THING = "ws://192.168.0.31:8888"
 h = 1
 STOPPED_TMR = 0xFF
 CONST_NO_MOTION_S = (2 * 60 * h) #2min
-bright = 0
+bright = 0.0
 
 def GetKodiStatus():
     player_active = False
@@ -25,7 +24,6 @@ def GetKodiStatus():
 def on_WebThingMsg(ws, message):
     global timer, bright, lock
     msg = json.loads(message)
-    logging.debug(msg)
     if msg['messageType'] == 'propertyStatus':
         for propId in msg['data']:
             if propId == 'motion':
@@ -35,8 +33,8 @@ def on_WebThingMsg(ws, message):
                   lock.acquire()
                   timer = STOPPED_TMR
                   lock.release()
-                  if(bright < 45):
-                    #syslog.syslog("Valid Motion detected @brightness: " + str(bright))
+                  if(bright < 0.5):
+                    logging.debug("Valid Motion detected @brightness: " + str(bright))
                     p = requests.post(GW_URL, auth=("atirage", "januar14"), data = {"Cmd":"1"})
                 else:
                     lock.acquire()
@@ -44,7 +42,6 @@ def on_WebThingMsg(ws, message):
                     lock.release()
             if propId == 'light':
                 bright = msg['data'][propId]
-                print bright
 
 def on_error(ws, error):
     logging.debug(error)
@@ -60,7 +57,7 @@ def HandleNoMotion():
         if timer == 0:
             #check if request is allowed
             if GetKodiStatus() == False:
-                #syslog.syslog("No motion timeout!")
+                logging.debug("No motion timeout!")
                 p = requests.post(GW_URL, auth=("atirage", "januar14"), data = {"Cmd":"2"})
             else:
                 timer = CONST_NO_MOTION_S

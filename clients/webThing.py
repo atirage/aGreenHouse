@@ -2,6 +2,7 @@
 #temp_calibrated = temp - ((cpu_temp - temp)/factor)
 
 from asyncio import sleep, CancelledError, get_event_loop
+from functools import partial
 from webthing import (Action, Event, Property, Value, SingleThing, Thing, WebThingServer)
 import syslog
 import time
@@ -10,7 +11,7 @@ import RPi.GPIO as GPIO
 from envirophat import weather
 from envirophat import light
 
-h = 2 #2sec
+h = 5 #5sec
 
 class EnvironSensor(Thing):
     """An environment(motion, pressure, temp, light) sensor which updates every few seconds."""
@@ -30,13 +31,13 @@ class EnvironSensor(Thing):
                                 'description': 'Whether motion is detected',
                               }))
         #light sensor
-        self.light = Value(0)
+        self.light = Value(0.0)
         self.add_property(
             Property(self, 'light', self.light,
                      metadata={
-                                'description': 'The level of light from 0-255',
+                                'description': 'The level of light',
                                 'minimum': 0,
-                                'maximum': 255,
+                                'maximum': 10.0,
                               }))
         #pressure sensor
         self.pressure = Value(0.0)
@@ -48,7 +49,7 @@ class EnvironSensor(Thing):
                                 'maximum': 3.0,
                               }))
         #temperature sensor
-        self.cpu_temp = Value(0.0)
+        self.cpu_temp = 0.0
         self.temp = Value(0.0)
         self.add_property(
             Property(self, 'temperature', self.temp,
@@ -67,23 +68,24 @@ class EnvironSensor(Thing):
     async def update_PHATsensors(self):
         try:
             while True:
-                await asyncio.sleep(h)
+                await sleep(h)
                 self.pressure.notify_of_external_update(round(weather.pressure()/101325, 2))
-                self.light.notify_of_external_update(light.light())
+                self.light.notify_of_external_update(round(light.light() / 100, 1))
                 fd = open('/sys/class/thermal/thermal_zone0/temp', 'r')
                 data = fd.read()
                 fd.close()
                 if data != 'NA':
-                    self.cpu_temp = floor(int(data) / 100.0) #0.1deg
-                amb_temp = floor(weather.temperature() * 10) #0.1deg
-                self.temp.notify_of_external_update(round((amb_temp - ((self.cpu_temp - amb_temp) / 2.0)) / 10.0, 1))
+                    self.cpu_temp = round(int(data) / 5000) * 5 #make it less sensitive
+                amb_temp = round(weather.temperature(), 1)
+                offset = round((self.cpu_temp - amb_temp) / 1.25, 1)
+                self.temp.notify_of_external_update(round(amb_temp - offset, 1))
         except CancelledError:
             pass
         
     async def detect_motion(self):
         try:
             while True:
-                await get_event_loop().run_in_executor(None, GPIO.wait_for_edge, channel = 21, edge = GPIO.BOTH) 
+                await get_event_loop().run_in_executor(None, partial(GPIO.wait_for_edge, channel = 21, edge = GPIO.BOTH)) 
                 self.motion.notify_of_external_update(GPIO.input(21))
         except CancelledError:
             pass
