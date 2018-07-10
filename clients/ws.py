@@ -4,6 +4,7 @@ import websocket
 import threading
 import json
 import logging
+from logging.handlers import SysLogHandler
 
 GW_URL = "http://127.0.0.1/monitor/kodi.php"
 KODI_URL = "http://192.168.0.178:8080/jsonrpc"
@@ -34,7 +35,7 @@ def on_WebThingMsg(ws, message):
                   timer = STOPPED_TMR
                   lock.release()
                   if(bright < 0.5):
-                    logging.debug("Valid Motion detected @brightness: " + str(bright))
+                    logger.debug("Valid Motion detected @brightness: " + str(bright))
                     p = requests.post(GW_URL, auth=("atirage", "januar14"), data = {"Cmd":"1"})
                 else:
                     lock.acquire()
@@ -44,10 +45,10 @@ def on_WebThingMsg(ws, message):
                 bright = msg['data'][propId]
 
 def on_error(ws, error):
-    logging.debug(error)
+    logger.debug(error)
 
 def on_close(ws):
-    logging.debug("Websocket closed!")
+    logger.debug("Websocket closed!")
 
 def HandleNoMotion():
     global h, timer, lock
@@ -57,16 +58,20 @@ def HandleNoMotion():
         if timer == 0:
             #check if request is allowed
             if GetKodiStatus() == False:
-                logging.debug("No motion timeout!")
+                logger.debug("No motion timeout!")
                 p = requests.post(GW_URL, auth=("atirage", "januar14"), data = {"Cmd":"2"})
             else:
                 timer = CONST_NO_MOTION_S
     lock.release()
     threading.Timer(h, HandleNoMotion).start()
 
+#set up logger
+logger = logging.getLogger()
+logger.setLevel(logging.DEBUG)
+logger.addHandler(SysLogHandler(address='/dev/log'))
+
 #var init
 timer = CONST_NO_MOTION_S
-logging.basicConfig(filename='ws.log', level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 lock = threading.Lock()
 ws = websocket.WebSocketApp(WEB_THING, on_message=on_WebThingMsg, on_error=on_error, on_close=on_close)
 
