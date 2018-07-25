@@ -6,9 +6,9 @@ import json
 import logging
 from logging.handlers import SysLogHandler
 
-GW_URL = "http://127.0.0.1/monitor/kodi.php"
-KODI_URL = "http://192.168.0.178:8080/jsonrpc"
-WEB_THING = "ws://192.168.0.31:8888"
+GW_URL = "http://localhost/monitor/kodi.php"
+KODI_URL = "http://libreelec.local:8080/jsonrpc"
+WEB_THING = "ws://raspi0.local:8888"
 
 h = 1
 STOPPED_TMR = 0xFF

@@ -20,43 +20,55 @@ class EnvironSensor(Thing):
     def __init__(self):
         Thing.__init__(self,
                        'My Environ Sensor Thing',
-                       'environSensor',
+                       ['BinarySensor', 'MultiLevelSensor'],
                        'A web connected environment sensor')
         #pir motion sensor
-        self.motion = Value(False)
+        self.motion = Value(False, None)
         self.add_property(
             Property(self, 'motion', self.motion,
                      metadata={
+                                '@type': 'OnOffProperty',
                                 'type': 'boolean',
                                 'description': 'Whether motion is detected',
                               }))
         #light sensor
-        self.light = Value(0.0)
+        self.light = Value(0.0, None)
         self.add_property(
             Property(self, 'light', self.light,
                      metadata={
+                                '@type': 'BrightnessProperty',
+                                'label': 'Brightness',
+                                'type': 'number',
                                 'description': 'The level of light',
                                 'minimum': 0,
                                 'maximum': 10.0,
                               }))
         #pressure sensor
-        self.pressure = Value(0.0)
+        self.pressure = Value(0.0, None)
         self.add_property(
             Property(self, 'pressure', self.pressure,
                      metadata={
+                                '@type': 'LevelProperty',
+                                'label': 'Pressure',
+                                'type': 'number',
                                 'description': 'The level of atmospheric pressure in atm',
                                 'minimum': 0,
                                 'maximum': 3.0,
+                                'unit': 'atm'
                               }))
         #temperature sensor
         self.cpu_temp = 0.0
-        self.temp = Value(0.0)
+        self.temp = Value(0.0, None)
         self.add_property(
             Property(self, 'temperature', self.temp,
                      metadata={
+                                '@type': 'LevelProperty',
+                                'label': 'Temperature',
+                                'type': 'number',
                                 'description': 'The level of ambient temperature in C',
                                 'minimum': -40.0,
                                 'maximum': 100.0,
+                                'unit': 'Celsius'
                               }))
 
         GPIO.setmode(GPIO.BCM)

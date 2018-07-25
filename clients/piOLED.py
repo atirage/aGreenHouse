@@ -15,7 +15,7 @@ import Adafruit_SSD1306
 
 from envirophat import weather
 
-URL = "http://192.168.0.150/monitor/current.php"
+URL = "http://alarmpi.local/monitor/current.php"
 
 STOPPED_TMR = 0xFFFF
 h = 0.1 # needs to be < 1
