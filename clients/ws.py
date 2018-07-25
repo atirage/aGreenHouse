@@ -17,9 +17,12 @@ bright = 0.0
 
 def GetKodiStatus():
     player_active = False
-    r = requests.post(KODI_URL, json = {"jsonrpc": "2.0", "method": "Player.GetActivePlayers", "id": 1})
-    if r.status_code == 200:
-        player_active = len((r.json())['result']) != 0
+    try:
+        r = requests.post(KODI_URL, json = {"jsonrpc": "2.0", "method": "Player.GetActivePlayers", "id": 1})
+        if r.status_code == 200:
+            player_active = len((r.json())['result']) != 0
+    except (ConnectionError, Timeout):
+        pass
     return player_active
 
 def on_WebThingMsg(ws, message):
