@@ -83,5 +83,5 @@ HandleNoMotion()
 
 #ws.on_open = on_open
 #connect ws and run
-#while True:
-ws.run_forever()
+while True:
+    ws.run_forever()

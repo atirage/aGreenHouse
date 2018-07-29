@@ -20,14 +20,14 @@ class EnvironSensor(Thing):
     def __init__(self):
         Thing.__init__(self,
                        'My Environ Sensor Thing',
-                       ['BinarySensor', 'MultiLevelSensor'],
+                       ['BinarySensor', 'MultiLevelSensor', 'MultiLevelSensor', 'MultiLevelSensor'],
                        'A web connected environment sensor')
         #pir motion sensor
         self.motion = Value(False, None)
         self.add_property(
             Property(self, 'motion', self.motion,
                      metadata={
-                                '@type': 'OnOffProperty',
+                                '@type': 'BooleanProperty',
                                 'type': 'boolean',
                                 'description': 'Whether motion is detected',
                               }))
@@ -36,12 +36,11 @@ class EnvironSensor(Thing):
         self.add_property(
             Property(self, 'light', self.light,
                      metadata={
-                                '@type': 'BrightnessProperty',
+                                '@type': 'LevelProperty',
                                 'label': 'Brightness',
                                 'type': 'number',
                                 'description': 'The level of light',
                                 'minimum': 0,
-                                'maximum': 10.0,
                               }))
         #pressure sensor
         self.pressure = Value(0.0, None)
@@ -76,7 +75,7 @@ class EnvironSensor(Thing):
         syslog.syslog('Starting the sensor update looping task')
         self.enviro_task = get_event_loop().create_task(self.update_PHATsensors())
         self.motion_task = get_event_loop().create_task(self.detect_motion())
-        
+
     async def update_PHATsensors(self):
         try:
             while True:
