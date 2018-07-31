@@ -9,13 +9,12 @@ import time
 import datetime
 import syslog
 import requests
+import json
 import RPi.GPIO as GPIO
 import Adafruit_GPIO.SPI as SPI
 import Adafruit_SSD1306
 
-from envirophat import weather
-
-URL = "http://alarmpi.local/monitor/current.php"
+URL = "http://localhost:8888/properties"
 
 STOPPED_TMR = 0xFFFF
 h = 0.1 # needs to be < 1
@@ -37,53 +36,27 @@ def CheckTimeIn(h0, m0, h1, m1):
     else:
         return False 
 
-def GetLivingData(ambT, ambRH, wifiLED, mask = 0x07):
+def GetLivingData(ambT, atm, light, mask = 0x07):
     try:
-        r = requests.get(URL, auth=("atirage", "januar14"))
+        r = requests.get(URL)
         rv = r.status_code
         if rv == 200:
-            start = 0
-            end = len(r.content) - 1
-            target = 3
-            while start < end:
-                i = (r.content).find("addRows", start, end)
-                if(i != -1):
-                    j = (r.content).find(";", i, end)
-                    line = (r.content)[i : j]
-                    if mask & 0x01:
-                        #look for amb temp
-                        k = line.find("\u00BAC")
-                        if k != -1:
-                            if line.find("Living", k - 13, k - 1):
-                                l = line.rfind("\"", k - 13, k - 1)
-                                mask &= 0xFE 
-                                ambT = line[l + 1 : k] + "\xB0C"
-                    if mask & 0x02:
-                        #look for RH
-                        k = line.find("%")
-                        if k != -1:
-                            if line.find("Living", k - 13, k -1):
-                                l = line.rfind("\"", k - 13, k -1)
-                                mask &= 0xFD
-                                ambRH = line[l + 1 : k] + "%"
-                    if mask & 0x04:
-                        #look for wifiLED state
-                        k = line.find("Lobby")
-                        if k != -1:
-                            if line.find("ON", k + 5, k + 15) != -1:
-                                mask &= 0xFB
-                                wifiLED = True
-                            elif line.find("OFF", k + 5, k + 15) != -1:
-                                mask &= 0xFB
-                                wifiLED = False
-                    start = j
-                else:
-                    start = end
-                if mask == 0:
-                    start = end
+            response = r.json()
+            if mask & 0x01:
+                #look for amb temp
+                mask &= 0xFE 
+                ambT = str(response['temperature']) + "\xB0C"
+            if mask & 0x02:
+                #look for atm pressure
+                mask &= 0xFD
+                atm = str(response['pressure']) + " atm"
+            if mask & 0x04:
+                #look for brightness level
+                mask &= 0xFB
+                light = str(response['light'])
     except (ConnectionError, Timeout):
         pass
-    return ambT, ambRH, wifiLED
+    return ambT, atm, light
 
 # set up PiOLED -------------------------------
 # Raspberry Pi pin configuration:
@@ -131,9 +104,9 @@ CONST_2_S = 2 * h_1                #2s
 #var init
 hold = CONST_2_S - 1
 slow_timer = 0
-amb_temp = "--"
-rh = "--"
+ambT = "--"
 atm = "--"
+light = "--"
 wifi_LED = False
 T = 20
 t = 0
@@ -151,17 +124,15 @@ y = 0
 
 while (True):
     if slow_timer == 0:
-        atm = round(weather.pressure()/101325, 2)
-        # Get data from alarmpi
-        amb_temp, rh, wifi_LED = GetLivingData(amb_temp, rh, wifi_LED)
+        # Get data from webThing
+        ambT, atm, light = GetLivingData(ambT, atm, light)
     # handle PiOLED------------------------
     # Draw a black filled box to clear the image.
     draw.rectangle((0, 0, width, 3*height), outline=0, fill=0)
     # Write the lines of text.
-    draw.text((20, 0), amb_temp, font=font, fill=255)
-    draw.text((20, height), rh, font=font, fill=255)
-    draw.text((0, 2*height), str(atm) + " atm", font=font, fill=255)
-    #draw.text((0, 2*height), str(bright), font=font, fill=255)
+    draw.text((20, 0), ambT, font=font, fill=255)
+    draw.text((20, height), atm, font=font, fill=255)
+    draw.text((0, 2*height), light , font=font, fill=255)
     if hold == 0:
         if t < T:
             t += 1
