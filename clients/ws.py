@@ -21,7 +21,8 @@ def GetKodiStatus():
         r = requests.post(KODI_URL, json = {"jsonrpc": "2.0", "method": "Player.GetActivePlayers", "id": 1})
         if r.status_code == 200:
             player_active = len((r.json())['result']) != 0
-    except (ConnectionError, Timeout):
+    except (Timeout):
+        logger.debug("Could not reach Kodi!")
         pass
     return player_active
 

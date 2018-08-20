@@ -10,7 +10,6 @@ import datetime
 import syslog
 import requests
 import json
-import RPi.GPIO as GPIO
 import Adafruit_GPIO.SPI as SPI
 import Adafruit_SSD1306
 
@@ -54,7 +53,7 @@ def GetLivingData(ambT, atm, light, mask = 0x07):
                 #look for brightness level
                 mask &= 0xFB
                 light = str(response['light'])
-    except (ConnectionError, Timeout):
+    except (Timeout):
         pass
     return ambT, atm, light
 
@@ -131,7 +130,7 @@ while (True):
     draw.rectangle((0, 0, width, 3*height), outline=0, fill=0)
     # Write the lines of text.
     draw.text((20, 0), ambT, font=font, fill=255)
-    draw.text((20, height), atm, font=font, fill=255)
+    draw.text((0, height), atm, font=font, fill=255)
     draw.text((0, 2*height), light , font=font, fill=255)
     if hold == 0:
         if t < T:
