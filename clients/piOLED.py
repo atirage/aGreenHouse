@@ -53,7 +53,7 @@ def GetLivingData(ambT, atm, light, mask = 0x07):
                 #look for brightness level
                 mask &= 0xFB
                 light = str(response['light'])
-    except (Timeout):
+    except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
         pass
     return ambT, atm, light
 
