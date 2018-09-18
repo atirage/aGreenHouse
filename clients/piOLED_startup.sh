@@ -1,3 +1,3 @@
 #!/bin/bash
 
-python /home/pi/share/piOLED.py &
+python /home/pi/share/git/aGreenHouse/clients/piOLED.py &
