@@ -12,6 +12,7 @@ from envirophat import weather
 from envirophat import light
 
 h = 5 #5sec
+APPLY_OFFS = False #offset needed if PHAT is mounted directly on Pi to balance CPU heat 
 
 class EnvironSensor(Thing):
     """An environment(motion, pressure, temp, light) sensor which updates every few seconds."""
@@ -59,7 +60,7 @@ class EnvironSensor(Thing):
                                 'readOnly': True,
                               }))
         #temperature sensor
-        self.cpu_temp = 0.0
+        self.cpu_temp = 50.0
         self.temp = Value(0.0)
         self.add_property(
             Property(self, 'temperature', self.temp,
@@ -84,16 +85,18 @@ class EnvironSensor(Thing):
         try:
             while True:
                 await sleep(h)
+                offset = 0.0
+                amb_temp = round(weather.temperature(), 1)
+                if APPLY_OFFS:
+                    fd = open('/sys/class/thermal/thermal_zone0/temp', 'r')
+                    data = fd.read()
+                    fd.close()
+                    if data != 'NA':
+                        self.cpu_temp = round(int(data) / 5000) * 5 #make it less sensitive
+                    offset = round((self.cpu_temp - amb_temp) / 1.25, 1)
+                self.temp.notify_of_external_update(round(amb_temp - offset, 1))
                 self.pressure.notify_of_external_update(round(weather.pressure()/101325, 2))
                 self.light.notify_of_external_update(round(light.light() / 100, 1))
-                fd = open('/sys/class/thermal/thermal_zone0/temp', 'r')
-                data = fd.read()
-                fd.close()
-                if data != 'NA':
-                    self.cpu_temp = round(int(data) / 5000) * 5 #make it less sensitive
-                amb_temp = round(weather.temperature(), 1)
-                offset = round((self.cpu_temp - amb_temp) / 1.25, 1)
-                self.temp.notify_of_external_update(round(amb_temp - offset, 1))
         except CancelledError:
             pass
         
