@@ -85,7 +85,7 @@ class EnvironSensor(Thing):
         try:
             while True:
                 await sleep(h)
-                offset = 0.0
+                offset = 3.5
                 amb_temp = round(weather.temperature(), 1)
                 if APPLY_OFFS:
                     fd = open('/sys/class/thermal/thermal_zone0/temp', 'r')

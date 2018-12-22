@@ -4,18 +4,39 @@ import websocket
 import threading
 import json
 import logging
+import touchphat
 from logging.handlers import SysLogHandler
 
 #GW_URL = "http://localhost/monitor/kodi.php"
-GW_URL = "https://gateway.local/things/"
-KODI_URL = "http://libreelec.local:8080/jsonrpc"
-WEB_THING = "ws://raspi0.local:8888"
+GW_URL = "https://gateway/things/"
+KODI_URL = "http://libreelec:8080/jsonrpc"
+WEB_THING = "ws://localhost:8888"
 
 h = 1
 STOPPED_TMR = 0xFFFF
 CONST_NO_MOTION_S = (10 * 60 * h) #10min
 RETRY_S = (4 * 60 *h) #2min
 bright = 0.0
+
+def sendToGW(cmd):
+    rv = False
+    try:
+        p = requests.put(GW_URL + 'miLight-adapter-0/properties/on', 
+                         headers = {
+                                    'Accept': 'application/json',
+                                    'content-type': 'application/json',
+                                    'Authorization': 'Bearer eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImNjNDc0Y2Q5LWQ0NDAtNDc0Yi1hYWM3LWEwZjcwNmFlYjg0YiJ9.eyJjbGllbnRfaWQiOiJsb2NhbC10b2tlbiIsInJvbGUiOiJhY2Nlc3NfdG9rZW4iLCJzY29wZSI6Ii90aGluZ3M6cmVhZHdyaXRlIiwiaWF0IjoxNTQwMjI0NzAxfQ.oj_bd4W-wNtm8ZREPSGdrI9FchFQpR1uDUbsaF4ILYiX47fDfvdwnCOVOudxFCKzkGEU4Zcg7JwhV3KU-AqxQg',
+                                    'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.100 Safari/537.36'
+                                   },
+                         verify = False,
+                         timeout = 5,
+                         json = {'on' : cmd})
+        if p.status_code != 200:
+            rv = True
+    except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
+        logger.debug("Could not reach IoT Gateway!")
+        rv = True
+    return rv
 
 def GetKodiStatus():
     player_active = False
@@ -43,23 +64,7 @@ def on_WebThingMsg(ws, message):
                   lock.release()
                   if(bright < 0.5):
                     logger.debug("Valid Motion detected @brightness: " + str(bright))
-                    try:
-                        p = requests.put(GW_URL + 'miLight-adapter-0/properties/on', 
-                                         headers = {
-                                                    'Accept': 'application/json',
-                                                    'content-type': 'application/json',
-                                                    'Authorization': 'Bearer eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImNjNDc0Y2Q5LWQ0NDAtNDc0Yi1hYWM3LWEwZjcwNmFlYjg0YiJ9.eyJjbGllbnRfaWQiOiJsb2NhbC10b2tlbiIsInJvbGUiOiJhY2Nlc3NfdG9rZW4iLCJzY29wZSI6Ii90aGluZ3M6cmVhZHdyaXRlIiwiaWF0IjoxNTQwMjI0NzAxfQ.oj_bd4W-wNtm8ZREPSGdrI9FchFQpR1uDUbsaF4ILYiX47fDfvdwnCOVOudxFCKzkGEU4Zcg7JwhV3KU-AqxQg',
-                                                    'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.100 Safari/537.36'
-                                                   },
-                                         verify = False,
-                                         timeout = 5,
-                                         json = {'on' : True})
-                        logger.debug('HTTP put executed!')
-                    except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
-                    #except requests.exceptions.ConnectionError as err:
-                        #logger.debug("Could not reach IoT Gateway: %s", err)
-                        logger.debug("Could not reach IoT Gateway!")
-                        pass
+                    sendToGW(True)
                 else:
                     lock.acquire()
                     timer = CONST_NO_MOTION_S
@@ -82,23 +87,22 @@ def HandleNoMotion():
             #check if request is allowed
             if GetKodiStatus() == False:
                 logger.debug("No motion timeout!")
-                try:
-                    p = requests.put(GW_URL + 'miLight-adapter-0/properties/on', 
-                                     headers = {
-                                                'Accept': 'application/json',
-                                                'content-type': 'application/json',
-                                                'Authorization': 'Bearer eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImNjNDc0Y2Q5LWQ0NDAtNDc0Yi1hYWM3LWEwZjcwNmFlYjg0YiJ9.eyJjbGllbnRfaWQiOiJsb2NhbC10b2tlbiIsInJvbGUiOiJhY2Nlc3NfdG9rZW4iLCJzY29wZSI6Ii90aGluZ3M6cmVhZHdyaXRlIiwiaWF0IjoxNTQwMjI0NzAxfQ.oj_bd4W-wNtm8ZREPSGdrI9FchFQpR1uDUbsaF4ILYiX47fDfvdwnCOVOudxFCKzkGEU4Zcg7JwhV3KU-AqxQg'
-                                               },
-                                     verify = False,
-                                     timeout= 5,
-                                     json = {'on' : False})
-                except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
-                    logger.debug("Could not reach IoT Gateway!")
+                if sendToGW(False) != False:
                     timer = RETRY_S
             else:
                 timer = CONST_NO_MOTION_S
     lock.release()
     threading.Timer(h, HandleNoMotion).start()
+    
+@touchphat.on_touch(["Back"])
+def handle_Back(event):
+    thr = threading.Thread(target=sendToGW, args=(False,), kwargs={})
+    thr.start()
+
+@touchphat.on_touch(["Enter"])
+def handle_Enter(event):
+    thr = threading.Thread(target=sendToGW, args=(True,), kwargs={})
+    thr.start()  
 
 #set up logger
 logger = logging.getLogger()
@@ -117,3 +121,4 @@ HandleNoMotion()
 #connect ws and run
 while True:
     ws.run_forever()
+    time.sleep(2)
