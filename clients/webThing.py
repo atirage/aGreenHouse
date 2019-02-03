@@ -12,7 +12,7 @@ from envirophat import weather
 from envirophat import light
 
 h = 5 #5sec
-APPLY_OFFS = False #offset needed if PHAT is mounted directly on Pi to balance CPU heat 
+APPLY_OFFS = False #offset needed if PHAT is mounted directly on Pi to balance CPU heat
 
 class EnvironSensor(Thing):
     """An environment(motion, pressure, temp, light) sensor which updates every few seconds."""
@@ -39,7 +39,7 @@ class EnvironSensor(Thing):
             Property(self, 'light', self.light,
                      metadata={
                                 '@type': 'LevelProperty',
-                                'label': 'Brightness',
+                                'title': 'Brightness',
                                 'type': 'number',
                                 'description': 'The level of light',
                                 'minimum': 0,
@@ -51,7 +51,7 @@ class EnvironSensor(Thing):
             Property(self, 'pressure', self.pressure,
                      metadata={
                                 '@type': 'LevelProperty',
-                                'label': 'Pressure',
+                                'title': 'Pressure',
                                 'type': 'number',
                                 'description': 'The level of atmospheric pressure in atm',
                                 'minimum': 0,
@@ -66,7 +66,7 @@ class EnvironSensor(Thing):
             Property(self, 'temperature', self.temp,
                      metadata={
                                 '@type': 'LevelProperty',
-                                'label': 'Temperature',
+                                'title': 'Temperature',
                                 'type': 'number',
                                 'description': 'The level of ambient temperature in C',
                                 'minimum': -40.0,
@@ -99,15 +99,15 @@ class EnvironSensor(Thing):
                 self.light.notify_of_external_update(round(light.light() / 100, 1))
         except CancelledError:
             pass
-        
+
     async def detect_motion(self):
         try:
             while True:
-                await get_event_loop().run_in_executor(None, partial(GPIO.wait_for_edge, channel = 21, edge = GPIO.BOTH)) 
+                await get_event_loop().run_in_executor(None, partial(GPIO.wait_for_edge, channel = 21, edge = GPIO.BOTH))
                 self.motion.notify_of_external_update(GPIO.input(21))
         except CancelledError:
             pass
-        
+
     def cancel_tasks(self):
         self.enviro_task.cancel()
         self.motion_task.cancel()
@@ -122,7 +122,7 @@ def run_server():
     # In the single thing case, the thing's name will be broadcast.
     server = WebThingServer(SingleThing(sensors), port=8888)
     try:
-        syslog.syslog('Starting the Webthing server')
+        syslog.syslog('Starting the Webthing server on: ' + str(server.hosts))
         server.start()
     except KeyboardInterrupt:
         sensors.cancel_tasks()

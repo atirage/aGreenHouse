@@ -1,5 +1,6 @@
 import time
 import requests
+import urllib3
 import websocket
 import threading
 import json
@@ -18,10 +19,10 @@ CONST_NO_MOTION_S = (10 * 60 * h) #10min
 RETRY_S = (4 * 60 *h) #2min
 bright = 0.0
 
-def sendToGW(cmd):
+def sendToGW(property, cmd):
     rv = False
     try:
-        p = requests.put(GW_URL + 'miLight-adapter-0/properties/on', 
+        p = requests.put(GW_URL + 'miLight-adapter-0/properties/' + property,
                          headers = {
                                     'Accept': 'application/json',
                                     'content-type': 'application/json',
@@ -30,11 +31,14 @@ def sendToGW(cmd):
                                    },
                          verify = False,
                          timeout = 5,
-                         json = {'on' : cmd})
+                         json = cmd)
         if p.status_code != 200:
             rv = True
-    except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
+    except requests.exceptions.Timeout:
         logger.debug("Could not reach IoT Gateway!")
+        rv = True
+    except requests.exceptions.ConnectionError as error:
+        logger.debug("Could not reach IoT Gateway: " + error)
         rv = True
     return rv
 
@@ -64,7 +68,7 @@ def on_WebThingMsg(ws, message):
                   lock.release()
                   if(bright < 0.5):
                     logger.debug("Valid Motion detected @brightness: " + str(bright))
-                    sendToGW(True)
+                    sendToGW('on', {'on':True})
                 else:
                     lock.acquire()
                     timer = CONST_NO_MOTION_S
@@ -87,23 +91,37 @@ def HandleNoMotion():
             #check if request is allowed
             if GetKodiStatus() == False:
                 logger.debug("No motion timeout!")
-                if sendToGW(False) != False:
+                if sendToGW('on', {'on':False}) != False:
                     timer = RETRY_S
             else:
                 timer = CONST_NO_MOTION_S
     lock.release()
     threading.Timer(h, HandleNoMotion).start()
-    
-@touchphat.on_touch(["Back"])
-def handle_Back(event):
-    thr = threading.Thread(target=sendToGW, args=(False,), kwargs={})
-    thr.start()
 
-@touchphat.on_touch(["Enter"])
-def handle_Enter(event):
-    thr = threading.Thread(target=sendToGW, args=(True,), kwargs={})
-    thr.start()  
+@touchphat.on_touch(['Back','A','B','C','D','Enter'])
+def handle_All(event):
+    if event.name == 'Back':
+        thr = threading.Thread(target=sendToGW, args=('level', {'level':0}, ), kwargs={})
+        thr.start()
+    elif event.name == 'A':
+        thr = threading.Thread(target=sendToGW, args=('level', {'level':20}, ), kwargs={})
+        thr.start()
+    elif event.name == 'B':
+        thr = threading.Thread(target=sendToGW, args=('level', {'level':40}, ), kwargs={})
+        thr.start()
+    elif event.name == 'C':
+        thr = threading.Thread(target=sendToGW, args=('level', {'level':60}, ), kwargs={})
+        thr.start()
+    elif event.name == 'D':
+        thr = threading.Thread(target=sendToGW, args=('level', {'level':80}, ), kwargs={})
+        thr.start()
+    elif event.name == 'Enter':
+        thr = threading.Thread(target=sendToGW, args=('level',  {'level':100}, ), kwargs={})
+        thr.start()
+    else:
+        pass
 
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 #set up logger
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
@@ -121,4 +139,4 @@ HandleNoMotion()
 #connect ws and run
 while True:
     ws.run_forever()
-    time.sleep(2)
+    time.sleep(5)
