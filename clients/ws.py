@@ -38,7 +38,7 @@ def sendToGW(property, cmd):
         logger.debug("Could not reach IoT Gateway!")
         rv = True
     except requests.exceptions.ConnectionError as error:
-        logger.debug("Could not reach IoT Gateway: " + error)
+        logger.debug("Could not reach IoT Gateway: " + str(error))
         rv = True
     return rv
 
@@ -100,8 +100,9 @@ def HandleNoMotion():
 
 @touchphat.on_touch(['Back','A','B','C','D','Enter'])
 def handle_All(event):
+    logger.debug("Touch:" + event.name)
     if event.name == 'Back':
-        thr = threading.Thread(target=sendToGW, args=('level', {'level':0}, ), kwargs={})
+        thr = threading.Thread(target=sendToGW, args=('on', {'on':False}, ), kwargs={})
         thr.start()
     elif event.name == 'A':
         thr = threading.Thread(target=sendToGW, args=('level', {'level':20}, ), kwargs={})
