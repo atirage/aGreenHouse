@@ -19,43 +19,42 @@ class Thunderboard:
         self.char = dict()
         self.name = ''
         self.coinCell = False
-        
+
         # Get device name and characteristics
         scanData = dev.getScanData()
-        
+
         for (adtype, desc, value) in scanData:
            if (desc == 'Complete Local Name'):
               self.name = value
-        
         ble_service = Peripheral()
         ble_service.connect(dev.addr, dev.addrType)
         characteristics = ble_service.getCharacteristics()
-        
+
         for k in characteristics:
             if k.uuid == '2a6e':
                self.char['temperature'] = k
-               
+
             elif k.uuid == '2a6f':
                self.char['humidity'] = k
-               
+
             elif k.uuid == '2a76':
                self.char['uvIndex'] = k
-               
+
             elif k.uuid == '2a6d':
                self.char['pressure'] = k
-               
+
             elif k.uuid == 'c8546913-bfd9-45eb-8dde-9f8754f4a32e':
                self.char['ambientLight'] = k
-            
+
             elif k.uuid == 'c8546913-bf02-45eb-8dde-9f8754f4a32e':
                self.char['sound'] = k
-            
+
             elif k.uuid == 'efd658ae-c401-ef33-76e7-91b00019103b':
                self.char['co2'] = k
-            
+
             elif k.uuid == 'efd658ae-c402-ef33-76e7-91b00019103b':
                self.char['voc'] = k
-            
+
             elif k.uuid == 'ec61a454-ed01-a5e8-b8f9-de9ec026ec51':
                self.char['power_source_type'] = k
 
@@ -112,12 +111,12 @@ class ExtEnvironSensor(Thing):
 
     def __init__(self, tbsense):
         Thing.__init__(self,
-                       'My Environ Sensor Thing',
-                       ['TemperatureSensor', 'MultiLevelSensor']#, 'MultiLevelSensor', 'MultiLevelSensor'],
+                       'My Thunderboard Sense Thing',
+                       ['TemperatureSensor', 'MultiLevelSensor'], #'MultiLevelSensor', 'MultiLevelSensor'],
                        'A web connected environment sensor')
-        
+
         self.tbsense = tbsense
-        
+
         #temperature sensor
         self.temp = Value(0.0)
         self.add_property(
@@ -132,11 +131,11 @@ class ExtEnvironSensor(Thing):
                                 'unit': 'Celsius',
                                 'readOnly': True,
                               }))
-        
+
         #humidity sensor
         self.humidity = Value(0.0)
         self.add_property(
-            Property(self, 'pressure', self.humidity,
+            Property(self, 'humidity', self.humidity,
                      metadata={
                                 '@type': 'LevelProperty',
                                 'title': 'Humidity',
@@ -154,8 +153,8 @@ class ExtEnvironSensor(Thing):
     async def update_TbSense(self):
         try:
             while True:
-                self.temp = self.tbsense.readTemperature()
-                self.humidity = self.tbsense.readHumidity()
+                self.temp.notify_of_external_update(self.tbsense.readTemperature())
+                self.humidity.notify_of_external_update(self.tbsense.readHumidity())
                 await sleep(h)
         except CancelledError:
             pass
@@ -184,7 +183,7 @@ def run_server():
             break
         syslog.syslog('Not found, retrying after 5sec ...')
         sleep(5)
-    
+
     sensors = ExtEnvironSensor(tbsense)
 
     # If adding more than one thing here, be sure to set the `name`
