@@ -55,7 +55,7 @@ class EnvironSensor(Thing):
                                 'type': 'number',
                                 'description': 'The level of atmospheric pressure in atm',
                                 'minimum': 0,
-                                'maximum': 3.0,
+                                'maximum': 1.5,
                                 'unit': 'atm',
                                 'readOnly': True,
                               }))

@@ -1,0 +1,20 @@
+[Unit]
+
+Description=TbSenseThing Startup
+
+
+After=network.target
+
+
+
+[Service]
+
+ExecStart=/home/pi/TbSenseThing/TbSense_startup.sh
+
+Type=forking
+
+
+
+[Install]
+
+WantedBy=multi-user.target

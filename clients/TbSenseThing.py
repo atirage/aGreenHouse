@@ -112,7 +112,7 @@ class ExtEnvironSensor(Thing):
     def __init__(self, tbsense):
         Thing.__init__(self,
                        'My Thunderboard Sense Thing',
-                       ['TemperatureSensor', 'MultiLevelSensor'], #'MultiLevelSensor', 'MultiLevelSensor'],
+                       ['TemperatureSensor', 'MultiLevelSensor', 'MultiLevelSensor', 'MultiLevelSensor', 'MultiLevelSensor'],
                        'A web connected environment sensor')
 
         self.tbsense = tbsense
@@ -146,6 +146,47 @@ class ExtEnvironSensor(Thing):
                                 'unit': '%',
                                 'readOnly': True,
                               }))
+        #ambient light sensor
+        self.amb_light = Value(0.0)
+        self.add_property(
+          Property(self, 'ambient light', self.amb_light,
+                   metadata={
+                              '@type': 'LevelProperty',
+                              'title': 'Ambient Light',
+                              'type': 'number',
+                              'description': 'The level of ambient light',
+                              'minimum': 0,
+                              'maximum': 100000,
+                              'unit': 'lux',
+                              'readOnly': True,
+                            }))
+        #UV index
+        self.uv_index = Value(0.0)
+        self.add_property(
+          Property(self, 'UV index', self.uv_index,
+                   metadata={
+                              '@type': 'LevelProperty',
+                              'title': 'UV index',
+                              'type': 'number',
+                              'description': 'The level of UV index',
+                              'minimum': 0,
+                              'maximum': 50,
+                              'readOnly': True,
+                            }))
+        #barometric pressure
+        self.pressure = Value(0.0)
+        self.add_property(
+          Property(self, 'pressure', self.pressure,
+                   metadata={
+                              '@type': 'LevelProperty',
+                              'title': 'Barometric pressure',
+                              'type': 'number',
+                              'description': 'The level of barometric pressure',
+                              'minimum': 0,
+                              'maximum': 1.2,
+                              'unit': 'atm',
+                              'readOnly': True,
+                            }))
 
         syslog.syslog('Starting the sensor update looping task')
         self.enviro_task = get_event_loop().create_task(self.update_TbSense())
@@ -155,6 +196,9 @@ class ExtEnvironSensor(Thing):
             while True:
                 self.temp.notify_of_external_update(self.tbsense.readTemperature())
                 self.humidity.notify_of_external_update(self.tbsense.readHumidity())
+                self.amb_light.notify_of_external_update(self.tbsense.readAmbientLight())
+                self.uv_index.notify_of_external_update(self.tbsense.readUvIndex())
+                self.pressure.notify_of_external_update(round(self.tbsense.readPressure()/1000, 2))
                 await sleep(h)
         except CancelledError:
             pass
