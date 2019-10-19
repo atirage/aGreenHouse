@@ -20,6 +20,7 @@ class EnvironSensor(Thing):
 
     def __init__(self):
         Thing.__init__(self,
+                       'urn:dev:ops:my-env-thing-1234',
                        'My Environ Sensor Thing',
                        ['BinarySensor', 'MultiLevelSensor', 'MultiLevelSensor', 'MultiLevelSensor'],
                        'A web connected environment sensor')
