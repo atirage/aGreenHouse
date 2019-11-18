@@ -22,7 +22,7 @@ class EnvironSensor(Thing):
         Thing.__init__(self,
                        'urn:dev:ops:my-env-thing-1234',
                        'My Environ Sensor Thing',
-                       ['BinarySensor', 'MultiLevelSensor', 'MultiLevelSensor', 'MultiLevelSensor'],
+                       ['BinarySensor', 'MultiLevelSensor', 'MultiLevelSensor', 'TemperatureSensor'],
                        'A web connected environment sensor')
         #pir motion sensor
         self.motion = Value(False)
@@ -45,6 +45,7 @@ class EnvironSensor(Thing):
                                 'description': 'The level of light',
                                 'minimum': 0,
                                 'readOnly': True,
+                                'multipleOf': 0.1,
                               }))
         #pressure sensor
         self.pressure = Value(0.0)
@@ -59,6 +60,7 @@ class EnvironSensor(Thing):
                                 'maximum': 1.5,
                                 'unit': 'atm',
                                 'readOnly': True,
+                                'multipleOf': 0.01,
                               }))
         #temperature sensor
         self.cpu_temp = 50.0
@@ -66,7 +68,7 @@ class EnvironSensor(Thing):
         self.add_property(
             Property(self, 'temperature', self.temp,
                      metadata={
-                                '@type': 'LevelProperty',
+                                '@type': 'TemperatureProperty',
                                 'title': 'Temperature',
                                 'type': 'number',
                                 'description': 'The level of ambient temperature in C',
@@ -74,6 +76,7 @@ class EnvironSensor(Thing):
                                 'maximum': 100.0,
                                 'unit': 'Celsius',
                                 'readOnly': True,
+                                'multipleOf': 0.1
                               }))
 
         GPIO.setmode(GPIO.BCM)
