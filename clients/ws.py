@@ -19,10 +19,10 @@ CONST_NO_MOTION_S = (10 * 60 * h) #10min
 RETRY_S = (4 * 60 *h) #2min
 bright = 0.0
 
-def sendToGW(property, cmd):
+def sendToGW(thing, property, cmd):
     rv = False
     try:
-        p = requests.put(GW_URL + 'miLight-adapter-0/properties/' + property,
+        p = requests.put(GW_URL + thing + '/properties/' + property,
                          headers = {
                                     'Accept': 'application/json',
                                     'content-type': 'application/json',
@@ -41,6 +41,10 @@ def sendToGW(property, cmd):
         logger.debug("Could not reach IoT Gateway: " + str(error))
         rv = True
     return rv
+
+def SendMultippleOffToGW(things):
+    for th in things:
+        sendToGW(th, 'on', {'on':False})
 
 def GetKodiStatus():
     player_active = False
@@ -68,7 +72,7 @@ def on_WebThingMsg(ws, message):
                   lock.release()
                   if(bright < 0.5):
                     logger.debug("Valid Motion detected @brightness: " + str(bright))
-                    sendToGW('on', {'on':True})
+                    sendToGW('miLight-adapter-0', 'on', {'on':True})
                 else:
                     lock.acquire()
                     timer = CONST_NO_MOTION_S
@@ -91,7 +95,7 @@ def HandleNoMotion():
             #check if request is allowed
             if GetKodiStatus() == False:
                 logger.debug("No motion timeout!")
-                if sendToGW('on', {'on':False}) != False:
+                if sendToGW('miLight-adapter-0', 'on', {'on':False}) != False:
                     timer = RETRY_S
             else:
                 timer = CONST_NO_MOTION_S
@@ -102,22 +106,22 @@ def HandleNoMotion():
 def handle_All(event):
     logger.debug("Touch:" + event.name)
     if event.name == 'Back':
-        thr = threading.Thread(target=sendToGW, args=('on', {'on':False}, ), kwargs={})
+        thr = threading.Thread(target=SendMultippleOffToGW, args=(['miLight-adapter-0', 'gpio-18'], ), kwargs={})
         thr.start()
     elif event.name == 'A':
-        thr = threading.Thread(target=sendToGW, args=('level', {'level':20}, ), kwargs={})
+        thr = threading.Thread(target=sendToGW, args=('miLight-adapter-0', 'level', {'level':20}, ), kwargs={})
         thr.start()
     elif event.name == 'B':
-        thr = threading.Thread(target=sendToGW, args=('level', {'level':40}, ), kwargs={})
+        thr = threading.Thread(target=sendToGW, args=('miLight-adapter-0', 'level', {'level':40}, ), kwargs={})
         thr.start()
     elif event.name == 'C':
-        thr = threading.Thread(target=sendToGW, args=('level', {'level':60}, ), kwargs={})
+        thr = threading.Thread(target=sendToGW, args=('miLight-adapter-0', 'level', {'level':60}, ), kwargs={})
         thr.start()
     elif event.name == 'D':
-        thr = threading.Thread(target=sendToGW, args=('level', {'level':80}, ), kwargs={})
+        thr = threading.Thread(target=sendToGW, args=('miLight-adapter-0', 'level', {'level':80}, ), kwargs={})
         thr.start()
     elif event.name == 'Enter':
-        thr = threading.Thread(target=sendToGW, args=('level',  {'level':100}, ), kwargs={})
+        thr = threading.Thread(target=sendToGW, args=('miLight-adapter-0', 'level',  {'level':100}, ), kwargs={})
         thr.start()
     else:
         pass
