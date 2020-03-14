@@ -10,6 +10,7 @@ import uuid
 import RPi.GPIO as GPIO
 from envirophat import weather
 from envirophat import light
+from envirophat import leds
 
 h = 5 #5sec
 APPLY_OFFS = False #offset needed if PHAT is mounted directly on Pi to balance CPU heat
@@ -108,6 +109,10 @@ class EnvironSensor(Thing):
         try:
             while True:
                 await get_event_loop().run_in_executor(None, partial(GPIO.wait_for_edge, channel = 21, edge = GPIO.BOTH))
+                if GPIO.input(21):
+                    leds.on()
+                else:
+                    leds.off()    
                 self.motion.notify_of_external_update(GPIO.input(21))
         except CancelledError:
             pass
