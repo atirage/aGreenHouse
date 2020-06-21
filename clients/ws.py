@@ -26,7 +26,7 @@ def sendToGW(thing, property, cmd):
                          headers = {
                                     'Accept': 'application/json',
                                     'content-type': 'application/json',
-                                    'Authorization': 'Bearer eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImNjNDc0Y2Q5LWQ0NDAtNDc0Yi1hYWM3LWEwZjcwNmFlYjg0YiJ9.eyJjbGllbnRfaWQiOiJsb2NhbC10b2tlbiIsInJvbGUiOiJhY2Nlc3NfdG9rZW4iLCJzY29wZSI6Ii90aGluZ3M6cmVhZHdyaXRlIiwiaWF0IjoxNTQwMjI0NzAxfQ.oj_bd4W-wNtm8ZREPSGdrI9FchFQpR1uDUbsaF4ILYiX47fDfvdwnCOVOudxFCKzkGEU4Zcg7JwhV3KU-AqxQg',
+                                    'Authorization': 'Bearer eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImM2NmJiYjQ4LWRmNjUtNDgxMC04ZjYxLWM1NjgxZWEyZTdmOCJ9.eyJjbGllbnRfaWQiOiJsb2NhbC10b2tlbiIsInJvbGUiOiJhY2Nlc3NfdG9rZW4iLCJzY29wZSI6Ii90aGluZ3M6cmVhZHdyaXRlIiwiaWF0IjoxNTg2NTE0OTI3LCJpc3MiOiJodHRwczovL2F0aXJhZ2UubW96aWxsYS1pb3Qub3JnIn0.7yZnPlCa2-j0YEVQAZOIqmSbG50SoQM5o9YeBzDnER2mfaDxELSEcVNsZ_Fkbf_xRZg7ByaFGGnqW2zm1o38gw',
                                     'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.100 Safari/537.36'
                                    },
                          verify = False,
