@@ -1,7 +1,7 @@
 import time
 import requests
 import urllib3
-import websocket
+import websocket, rel
 import threading
 import json
 import logging
@@ -9,9 +9,11 @@ import touchphat
 from logging.handlers import SysLogHandler
 
 #GW_URL = "http://localhost/monitor/kodi.php"
-GW_URL = "https://gateway/things/"
+GW_URL = "http://gateway/things/"
 KODI_URL = "http://libreelec:8080/jsonrpc"
 WEB_THING = "ws://localhost:8888"
+ZGB_BTN_THING = "ws://gateway/things/zb-84fd27fffe1f812e"
+JWT = "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImM2NmJiYjQ4LWRmNjUtNDgxMC04ZjYxLWM1NjgxZWEyZTdmOCJ9.eyJjbGllbnRfaWQiOiJsb2NhbC10b2tlbiIsInJvbGUiOiJhY2Nlc3NfdG9rZW4iLCJzY29wZSI6Ii90aGluZ3M6cmVhZHdyaXRlIiwiaWF0IjoxNTg2NTE0OTI3LCJpc3MiOiJodHRwczovL2F0aXJhZ2UubW96aWxsYS1pb3Qub3JnIn0.7yZnPlCa2-j0YEVQAZOIqmSbG50SoQM5o9YeBzDnER2mfaDxELSEcVNsZ_Fkbf_xRZg7ByaFGGnqW2zm1o38gw"
 
 h = 1
 STOPPED_TMR = 0xFFFF
@@ -26,7 +28,7 @@ def sendToGW(thing, property, cmd):
                          headers = {
                                     'Accept': 'application/json',
                                     'content-type': 'application/json',
-                                    'Authorization': 'Bearer eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImM2NmJiYjQ4LWRmNjUtNDgxMC04ZjYxLWM1NjgxZWEyZTdmOCJ9.eyJjbGllbnRfaWQiOiJsb2NhbC10b2tlbiIsInJvbGUiOiJhY2Nlc3NfdG9rZW4iLCJzY29wZSI6Ii90aGluZ3M6cmVhZHdyaXRlIiwiaWF0IjoxNTg2NTE0OTI3LCJpc3MiOiJodHRwczovL2F0aXJhZ2UubW96aWxsYS1pb3Qub3JnIn0.7yZnPlCa2-j0YEVQAZOIqmSbG50SoQM5o9YeBzDnER2mfaDxELSEcVNsZ_Fkbf_xRZg7ByaFGGnqW2zm1o38gw',
+                                    'Authorization': 'Bearer %s' % JWT,
                                     'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.100 Safari/537.36'
                                    },
                          verify = False,
@@ -83,8 +85,18 @@ def on_WebThingMsg(ws, message):
             if propId == 'light':
                 bright = msg['data'][propId]
 
+def on_ZbBtnThingMsg(ws, message):
+    msg = json.loads(message)
+    if msg['messageType'] == 'propertyStatus':
+        for propId in msg['data']:
+            if propId in ('on', 'level'):
+                sendToGW('miLight-adapter-2', propId, {propId : msg['data'][propId]})
+            else:
+                pass
+
 def on_error(ws, error):
     logger.debug(error)
+    rel.abort()
 
 def on_close(ws):
     logger.debug("Websocket closed!")
@@ -109,7 +121,7 @@ def HandleNoMotion():
 def handle_All(event):
     #logger.debug("Touch:" + event.name)
     if event.name == 'Back':
-        thr = threading.Thread(target=SendMultippleOffToGW, args=(['miLight-adapter-0', 'miLight-adapter-1', 'gpio-18'], ), kwargs={})
+        thr = threading.Thread(target=SendMultippleOffToGW, args=(['miLight-adapter-0', 'miLight-adapter-1', 'http---esp8266.local-things-LED'], ), kwargs={})
         thr.start()
     elif event.name == 'A':
         thr = threading.Thread(target=SendMultippleLvlToGW, args=(['miLight-adapter-0', 'miLight-adapter-1'], 20, ), kwargs={})
@@ -138,13 +150,24 @@ logger.addHandler(SysLogHandler(address='/dev/log'))
 #var init
 timer = CONST_NO_MOTION_S
 lock = threading.Lock()
-ws = websocket.WebSocketApp(WEB_THING, on_message=on_WebThingMsg, on_error=on_error, on_close=on_close)
+rel.safe_read()
+ws1 = websocket.WebSocketApp(WEB_THING, on_message=on_WebThingMsg, on_error=on_error, on_close=on_close)
+ws2 = websocket.WebSocketApp('%s?jwt=%s' % (ZGB_BTN_THING, JWT), on_message=on_ZbBtnThingMsg, on_error=on_error, on_close=on_close)
+ws1.run_forever(dispatcher=rel)
+ws2.run_forever(dispatcher=rel)
 
 #will be called every 1sec
 HandleNoMotion()
 
-#ws.on_open = on_open
+#rel.signal(2, rel.abort)  # Keyboard Interrupt
+
 #connect ws and run
 while True:
-    ws.run_forever()
+    rel.dispatch()
     time.sleep(5)
+
+#ws.on_open = on_open
+
+#while True:
+#    ws.run_forever()
+#    time.sleep(5)
