@@ -1,30 +1,22 @@
-import time
+import asyncio
 import requests
 import urllib3
-import websocket, rel
-import threading
+import websockets
 import json
 import logging
-import touchphat
 from logging.handlers import SysLogHandler
 
-#GW_URL = "http://localhost/monitor/kodi.php"
-GW_URL = "http://gateway/things/"
-KODI_URL = "http://libreelec:8080/jsonrpc"
-WEB_THING = "ws://localhost:8888"
-ZGB_BTN_THING = "ws://gateway/things/zb-84fd27fffe1f812e"
-JWT = "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImM2NmJiYjQ4LWRmNjUtNDgxMC04ZjYxLWM1NjgxZWEyZTdmOCJ9.eyJjbGllbnRfaWQiOiJsb2NhbC10b2tlbiIsInJvbGUiOiJhY2Nlc3NfdG9rZW4iLCJzY29wZSI6Ii90aGluZ3M6cmVhZHdyaXRlIiwiaWF0IjoxNTg2NTE0OTI3LCJpc3MiOiJodHRwczovL2F0aXJhZ2UubW96aWxsYS1pb3Qub3JnIn0.7yZnPlCa2-j0YEVQAZOIqmSbG50SoQM5o9YeBzDnER2mfaDxELSEcVNsZ_Fkbf_xRZg7ByaFGGnqW2zm1o38gw"
-
-h = 1
-STOPPED_TMR = 0xFFFF
-CONST_NO_MOTION_S = (10 * 60 * h) #10min
-RETRY_S = (4 * 60 *h) #2min
-bright = 0.0
+#KODI_URL = "http://libreelec:8080/jsonrpc"
+#GW_URL = "//localhost/things/"
+GW_URL = "//gateway.local/things/"
+ZGB_BTN_THING = "zb-84fd27fffe1f812e" 
+MOTION_THING = "gpio-4"
+JWT = "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjMwMmU3NDJiLWRlYTItNDI5NS1iMGI4LTNlNzBiYzg4YjBjYyJ9.eyJjbGllbnRfaWQiOiJsb2NhbC10b2tlbiIsInJvbGUiOiJhY2Nlc3NfdG9rZW4iLCJzY29wZSI6Ii90aGluZ3M6cmVhZHdyaXRlIiwiaWF0IjoxNjY5MDMyMzI0LCJpc3MiOiJodHRwczovL2F0aXJhZ2Uud2VidGhpbmdzLmlvIn0.H2Sgvzhb0dnmnO-6VT7Iix7uxJBWO8YDZlVEe1WGTuB1UZ7XbQkHvBjsds7p4uS3v0wnYZAcKs8fuWe4bQoDtw"
 
 def sendToGW(thing, property, cmd):
     rv = False
     try:
-        p = requests.put(GW_URL + thing + '/properties/' + property,
+        p = requests.put('http:' + GW_URL + thing + '/properties/' + property,
                          headers = {
                                     'Accept': 'application/json',
                                     'content-type': 'application/json',
@@ -52,94 +44,65 @@ def SendMultippleLvlToGW(things, lvl):
     for th in things:
         sendToGW(th, 'level', {'level':lvl})
 
-def GetKodiStatus():
-    player_active = False
-    try:
-        r = requests.post(KODI_URL, json = {"jsonrpc": "2.0", "method": "Player.GetActivePlayers", "id": 1})
-        if r.status_code == 200:
-            player_active = len((r.json())['result']) != 0
-    except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
-        logger.debug("Could not reach Kodi!")
-        pass
-    return player_active
+async def ZgbBtnWs():
+    async with websockets.connect('ws:%s%s?jwt=%s' % (GW_URL, ZGB_BTN_THING, JWT)) as ws:
+        while True:
+            msg = json.loads(await ws.recv())
+            if msg['messageType'] == 'propertyStatus':
+                for propId in msg['data']:
+                    if propId in ('on', 'level'):
+                        sendToGW('miLight-adapter-2', propId, {propId : msg['data'][propId]})
+                    else:
+                        pass
 
-def on_WebThingMsg(ws, message):
-    global timer, bright, lock
-    msg = json.loads(message)
-    if msg['messageType'] == 'propertyStatus':
-        for propId in msg['data']:
-            if propId == 'motion':
-                motion = msg['data'][propId]
-                # motion sensor handling
-                if motion:
-                  lock.acquire()
-                  timer = STOPPED_TMR
-                  lock.release()
-                  if(bright < 0.5):
-                    #logger.debug("Valid Motion detected @brightness: " + str(bright))
-                    sendToGW('miLight-adapter-0', 'on', {'on':True})
-                else:
-                    lock.acquire()
-                    timer = CONST_NO_MOTION_S
-                    lock.release()
-            if propId == 'light':
-                bright = msg['data'][propId]
+async def MotionWs(q):
+    async with websockets.connect('ws:%s%s?jwt=%s' % (GW_URL, MOTION_THING, JWT)) as ws:
+        while True:
+            msg = json.loads(await ws.recv())
+            if msg['messageType'] == 'propertyStatus' and 'on' in msg['data'] and msg['data']['on']:
+                q.put_nowait('motion')
 
-def on_ZbBtnThingMsg(ws, message):
-    msg = json.loads(message)
-    if msg['messageType'] == 'propertyStatus':
-        for propId in msg['data']:
-            if propId in ('on', 'level'):
-                sendToGW('miLight-adapter-2', propId, {propId : msg['data'][propId]})
+async def Delay(q):
+    await asyncio.sleep(120)
+    q.put_nowait('timeout')
+
+async def SwitchFsm(q):
+    st = 0 #OFF
+    tmr = None
+    while True:
+        item = await q.get()
+        if st == 0:
+            if item == 'motion':
+                print('motion')
+                #calculate needed level, could be 0
+                sendToGW('miLight-adapter-0', 'on', {'on':True})
+                #start timer
+                tmr = asyncio.create_task(Delay(q))
+                st = 1
+        elif st == 1:
+            if item == 'timeout':
+                print('timeout')
+                sendToGW('miLight-adapter-0', 'on', {'on':False})
+                st = 0
+            elif item == 'motion':
+                tmr.cancel()
+                tmr = asyncio.create_task(Delay(q))
             else:
-                pass
+                pass    
+        else:
+            pass
+        q.task_done()
+    return
 
-def on_error(ws, error):
-    logger.debug(error)
-    rel.abort()
+async def main():
 
-def on_close(ws):
-    logger.debug("Websocket closed!")
-
-def HandleNoMotion():
-    global h, timer, lock
-    lock.acquire()
-    if 0 < timer < STOPPED_TMR:
-        timer -= 1
-        if timer == 0:
-            #check if request is allowed
-            if GetKodiStatus() == False:
-                #logger.debug("No motion timeout!")
-                if sendToGW('miLight-adapter-0', 'on', {'on':False}) != False:
-                    timer = RETRY_S
-            else:
-                timer = CONST_NO_MOTION_S
-    lock.release()
-    threading.Timer(h, HandleNoMotion).start()
-
-@touchphat.on_touch(['Back','A','B','C','D','Enter'])
-def handle_All(event):
-    #logger.debug("Touch:" + event.name)
-    if event.name == 'Back':
-        thr = threading.Thread(target=SendMultippleOffToGW, args=(['miLight-adapter-0', 'miLight-adapter-1', 'http---esp8266.local-things-LED'], ), kwargs={})
-        thr.start()
-    elif event.name == 'A':
-        thr = threading.Thread(target=SendMultippleLvlToGW, args=(['miLight-adapter-0', 'miLight-adapter-1'], 20, ), kwargs={})
-        thr.start()
-    elif event.name == 'B':
-        thr = threading.Thread(target=SendMultippleLvlToGW, args=(['miLight-adapter-0', 'miLight-adapter-1'], 40, ), kwargs={})
-        thr.start()
-    elif event.name == 'C':
-        thr = threading.Thread(target=SendMultippleLvlToGW, args=(['miLight-adapter-0', 'miLight-adapter-1'], 60, ), kwargs={})
-        thr.start()
-    elif event.name == 'D':
-        thr = threading.Thread(target=SendMultippleLvlToGW, args=(['miLight-adapter-0', 'miLight-adapter-1'], 80, ), kwargs={})
-        thr.start()
-    elif event.name == 'Enter':
-        thr = threading.Thread(target=SendMultippleLvlToGW, args=(['miLight-adapter-0', 'miLight-adapter-1'], 100, ), kwargs={})
-        thr.start()
-    else:
-        pass
+    Q = asyncio.Queue()
+    L = await asyncio.gather(
+                #ZgbBtnWs(),
+                MotionWs(Q),
+                SwitchFsm(Q),
+        )
+    return
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 #set up logger
@@ -147,27 +110,4 @@ logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
 logger.addHandler(SysLogHandler(address='/dev/log'))
 
-#var init
-timer = CONST_NO_MOTION_S
-lock = threading.Lock()
-rel.safe_read()
-ws1 = websocket.WebSocketApp(WEB_THING, on_message=on_WebThingMsg, on_error=on_error, on_close=on_close)
-ws2 = websocket.WebSocketApp('%s?jwt=%s' % (ZGB_BTN_THING, JWT), on_message=on_ZbBtnThingMsg, on_error=on_error, on_close=on_close)
-ws1.run_forever(dispatcher=rel)
-ws2.run_forever(dispatcher=rel)
-
-#will be called every 1sec
-HandleNoMotion()
-
-#rel.signal(2, rel.abort)  # Keyboard Interrupt
-
-#connect ws and run
-while True:
-    rel.dispatch()
-    time.sleep(5)
-
-#ws.on_open = on_open
-
-#while True:
-#    ws.run_forever()
-#    time.sleep(5)
+asyncio.run(main())
