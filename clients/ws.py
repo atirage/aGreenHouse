@@ -10,13 +10,16 @@ from logging.handlers import SysLogHandler
 #KODI_URL = "http://libreelec:8080/jsonrpc"
 JWT = "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjMwMmU3NDJiLWRlYTItNDI5NS1iMGI4LTNlNzBiYzg4YjBjYyJ9.eyJjbGllbnRfaWQiOiJsb2NhbC10b2tlbiIsInJvbGUiOiJhY2Nlc3NfdG9rZW4iLCJzY29wZSI6Ii90aGluZ3M6cmVhZHdyaXRlIiwiaWF0IjoxNjY5MDMyMzI0LCJpc3MiOiJodHRwczovL2F0aXJhZ2Uud2VidGhpbmdzLmlvIn0.H2Sgvzhb0dnmnO-6VT7Iix7uxJBWO8YDZlVEe1WGTuB1UZ7XbQkHvBjsds7p4uS3v0wnYZAcKs8fuWe4bQoDtw"
 ZGB_BTN_THING = 'zb-84fd27fffe1f812e'
+ZGB_MOTION_THING = 'zb-00158d00047bce3d'
 MOTION_THING = 'gpio-4'
-KITCHEN_THING = 'http---raspi0.local-8888'
+#KITCHEN_THING = 'http---raspi0.local-8888'
+BEDROOM_LIGHT = 'miLight-adapter-1'
 HALLWAY_LIGHT = 'miLight-adapter-0'
 KITCHEN_LIGHT = 'sonoff-diy-adapter-0'
 TIMEOUT1 = 120
 TIMEOUT2 = 300
 LOCAL = True
+DAYLIGHT = 2.0
 
 if not LOCAL:
     GW_URL = "//gateway.local/things/"
@@ -68,7 +71,7 @@ async def ZgbBtnWs():
                 if msg['messageType'] == 'propertyStatus':
                     for propId in msg['data']:
                         if propId in ('on', 'level'):
-                            sendToGW('miLight-adapter-2', propId, {propId : msg['data'][propId]})
+                            sendToGW(BEDROOM_LIGHT, propId, {propId : msg['data'][propId]})
         except websockets.ConnectionClosed:
             #try again
             continue
@@ -88,7 +91,23 @@ async def MotionWs(q):
             #try again
             continue
 
-async def KitchenWs(q):
+async def ZgbMotionWs(q):
+    uri = 'ws:%s%s?jwt=%s' % (GW_URL, ZGB_MOTION_THING, JWT)
+    async for ws in websockets.connect(uri):
+        try:
+            while True:
+                msg = json.loads(await ws.recv())
+                if msg['messageType'] == 'propertyStatus' and 'occupied' in msg['data']:
+                    if msg['data']['occupied']:
+                        q.put_nowait('motion2')
+                    else:
+                        q.put_nowait('no_motion2') 
+        except websockets.ConnectionClosed:
+            #try again
+            continue
+
+
+'''async def KitchenWs(q):
     global light_sensor
     uri = 'ws:%s%s?jwt=%s' % (GW_URL, KITCHEN_THING, JWT)
     async for ws in websockets.connect(uri):
@@ -106,6 +125,21 @@ async def KitchenWs(q):
                             light_sensor = msg['data'][propId]    
         except websockets.ConnectionClosed:
             #try again
+            continue'''
+
+async def SwitchWs(thing, ev, q):
+    uri = 'ws:%s%s?jwt=%s' % (GW_URL, thing, JWT)
+    async for ws in websockets.connect(uri):
+        try:
+            while True:
+                msg = json.loads(await ws.recv())
+                if msg['messageType'] == 'propertyStatus' and 'on' in msg['data']:
+                    if msg['data']['on']:
+                        q.put_nowait(ev + '_on')
+                    else:
+                        q.put_nowait(ev + '_off')  
+        except websockets.ConnectionClosed:
+            #try again
             continue
 
 async def Delay1(t, q):
@@ -116,98 +150,103 @@ async def Delay2(t, q):
     await asyncio.sleep(t)
     q.put_nowait('timeout2')
 
+def IsRunning(tmr):
+    return (tmr != None and not tmr.done() and not tmr.cancelled())
+
 ''' statemachines implementing behaviors based on events '''
-async def MotionSwitchFsm(q):
+async def KitchenLightFsm(q):
     st = 0 #OFF
-    tmr = [None, None]
+    tmr = None
+    while True:
+        item = await q.get()
+        dt = time.localtime()
+        if st == 0:
+            '''if item == 'motion1' and light_sensor < DAYLIGHT and dt.tm_hour >= 7: # "dark" and daytime:
+                if not sendToGW(KITCHEN_LIGHT, 'on', {'on':True}):
+                    tmr = asyncio.create_task(Delay2(TIMEOUT2, q))
+                    st = 1
+            el'''
+            if item == 'motion2' and light_sensor < DAYLIGHT:
+                if not sendToGW(KITCHEN_LIGHT, 'on', {'on':True}):
+                    st = 1
+            elif item == 'light2_on':
+                tmr = asyncio.create_task(Delay2(TIMEOUT2, q))
+                st = 1
+        elif st == 1:
+            if item == 'timeout2':
+                if sendToGW(KITCHEN_LIGHT, 'on', {'on':False}):
+                    #unsuccessful, try again
+                    tmr = asyncio.create_task(Delay2(1, q))
+                else: 
+                    st = 1
+            elif item == 'motion2':
+                if IsRunning(tmr):
+                    tmr.cancel()
+            elif item == 'no_motion2':
+                if not IsRunning(tmr):
+                    tmr = asyncio.create_task(Delay2(TIMEOUT2, q))
+            elif item == 'light2_off':
+                if IsRunning(tmr):
+                    tmr.cancel()
+                st = 0 
+        else:
+            pass            
+        q.task_done()
+        logger.debug('Kitchen State: ' + str(st))
+    return
+
+async def HallwayLightFsm(q):
+    st = 0 #OFF
+    tmr = None
     while True:
         item = await q.get()
         dt = time.localtime()
         if st == 0:
             if item == 'motion1':
-                if light_sensor < 0.8 and dt.tm_hour >= 7: # "dark" and daytime
-                        if not sendToGW(HALLWAY_LIGHT, 'level', {'level':100}):
-                            st |= 1
-                        if not sendToGW(KITCHEN_LIGHT, 'on', {'on':True}):
-                            tmr[1] = asyncio.create_task(Delay2(TIMEOUT2, q))
-                            st |= 2
-                else: #only hallway
-                    level = 50
-                    if dt.tm_hour < 7: level = 20
-                    if not sendToGW(HALLWAY_LIGHT, 'level', {'level':level}):
-                        st = 1
-            elif item == 'motion2' and light_sensor < 0.8:
-                if not sendToGW(KITCHEN_LIGHT, 'on', {'on':True}):
-                    st = 2
+                level = 50
+                if dt.tm_hour >= 22 or dt.tm_hour < 7: level = 15
+                elif light_sensor < DAYLIGHT and dt.tm_hour >= 7: level = 100 # "dark" and daytime
+                if not sendToGW(HALLWAY_LIGHT, 'level', {'level':level}):
+                    st = 1
+            elif item == 'light1_on':
+                #maybe start timeout
+                st = 1
         elif st == 1:
             if item == 'timeout1':
                 if sendToGW(HALLWAY_LIGHT, 'on', {'on':False}):
                     #unsuccessful, try again
-                    tmr[0] = asyncio.create_task(Delay1(1, q))
+                    tmr = asyncio.create_task(Delay1(1, q))
                 else: 
                     st = 0
             elif item == 'motion1':
-                if not tmr[0].done() and not tmr[0].cancelled():
-                    tmr[0].cancel()
+                if IsRunning(tmr):
+                    tmr.cancel()
             elif item == 'no_motion1':
-                if tmr[0] is None or tmr[0].done() or tmr[0].cancelled():
-                    tmr[0] = asyncio.create_task(Delay1(TIMEOUT1, q))
-            elif item == 'motion2' and light_sensor < 0.8:
-                if not sendToGW(KITCHEN_LIGHT, 'on', {'on':True}):
-                    st = 3
-        elif st == 2:
-            if item == 'timeout2':
-                if sendToGW(KITCHEN_LIGHT, 'on', {'on':False}):
-                    #unsuccessful, try again
-                    tmr[1] = asyncio.create_task(Delay2(1, q))
-                else: 
-                    st = 0
-            elif item == 'motion2':
-                if not tmr[1].done() and not tmr[1].cancelled():
-                    tmr[1].cancel()
-            elif item == 'no_motion2':
-                tmr[1] = asyncio.create_task(Delay2(TIMEOUT2, q))
-            elif item == 'motion1':
-                if not sendToGW(HALLWAY_LIGHT, 'on', {'on':True}):
-                    st = 3
-        elif st == 3:
-            if item == 'timeout1':
-                if sendToGW(HALLWAY_LIGHT, 'on', {'on':False}):
-                    #unsuccessful, try again
-                    tmr[0] = asyncio.create_task(Delay1(1, q))
-                else: 
-                    st = 2
-            elif item == 'timeout2':
-                if sendToGW(KITCHEN_LIGHT, 'on', {'on':False}):
-                    #unsuccessful, try again
-                    tmr[1] = asyncio.create_task(Delay2(1, q))
-                else: 
-                    st = 1
-            elif item == 'motion1':
-                if not tmr[0].done() and not tmr[0].cancelled():
-                    tmr[0].cancel()
-            elif item == 'no_motion1':
-                if tmr[0] is None or tmr[0].done() or tmr[0].cancelled():
-                    tmr[0] = asyncio.create_task(Delay1(TIMEOUT1, q))
-            elif item == 'motion2':
-                if not tmr[1].done() and not tmr[1].cancelled():
-                    tmr[1].cancel()
-            elif item == 'no_motion2':
-                tmr[1] = asyncio.create_task(Delay2(TIMEOUT2, q))
+                if not IsRunning(tmr):
+                    tmr = asyncio.create_task(Delay1(TIMEOUT1, q))
+            elif item == 'light1_off':
+                if IsRunning(tmr):
+                    tmr.cancel()
+                st = 0
         else:
             pass
         q.task_done()
-        logger.debug('Motion State: ' + str(st))
+        logger.debug('Hallway State: ' + str(st))
     return
 
 ''' putting it all together '''
 async def main():
-    Q = asyncio.Queue()
+    Q1 = asyncio.Queue()
+    Q2 = asyncio.Queue()
     L = await asyncio.gather(
-                #ZgbBtnWs(),
-                KitchenWs(Q),
-                MotionWs(Q),
-                MotionSwitchFsm(Q),
+                ZgbBtnWs(),
+                SwitchWs(HALLWAY_LIGHT, 'light1', Q1),
+                SwitchWs(KITCHEN_LIGHT, 'light2', Q2),
+                #KitchenWs(Q2),
+                MotionWs(Q1),
+                ZgbMotionWs(Q2),
+                HallwayLightFsm(Q1),
+                KitchenLightFsm(Q2)
         )
     return
 
